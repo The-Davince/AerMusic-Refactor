@@ -89,6 +89,7 @@ const StyleCore = {
         }
         
         this.styles[id] = style;
+        this._lastRegisteredStyle = style;
         console.log(`[StyleCore] 样式已注册: ${style.STYLE_INFO.NAME} (${id})`);
         return true;
     },
@@ -247,17 +248,28 @@ const StyleCore = {
         try {
             const { id, jsSource, cssSource, cssInJs } = customStyle;
             
-            // 加载 JS
+            // 加载 JS: 只允许 https 与站内相对路径, 拒绝 javascript:/data:/http: 等
             if (jsSource.type === 'url' && jsSource.value) {
+                let target = String(jsSource.value).trim();
+                let safe = false;
+                try {
+                    const u = new URL(target, window.location.origin);
+                    safe = (u.protocol === 'https:' && u.origin !== window.location.origin) ||
+                           (u.origin === window.location.origin && u.pathname.startsWith('/'));
+                } catch (e) { safe = false; }
+                if (!safe) {
+                    console.error('[StyleCore] 拒绝加载不安全的脚本来源:', target);
+                    return false;
+                }
                 const script = document.createElement('script');
-                script.src = jsSource.value;
+                script.src = target;
                 await new Promise((resolve, reject) => {
                     script.onload = resolve;
                     script.onerror = reject;
                     document.head.appendChild(script);
                 });
             } else if (jsSource.type === 'inline' && jsSource.value) {
-                // 使用 Blob + URL 创建 script，避免 eval 的安全问题
+                // 注意: blob: 脚本继承页面 origin, 权限与远程加载等同, 同样是执行任意代码
                 const blob = new Blob([jsSource.value], { type: 'application/javascript' });
                 const url = URL.createObjectURL(blob);
                 const script = document.createElement('script');
@@ -271,17 +283,23 @@ const StyleCore = {
             
             // 加载 CSS 前先清除旧的 playstyle-link
             const link = document.getElementById('playstyle-link');
-            if (link) link.href = '';
+            if (link) link.removeAttribute('href');
             if (!cssInJs && cssSource && cssSource.value) {
                 if (cssSource.type === 'url') {
-                    if (link) link.href = cssSource.value;
+                    let cssTarget = String(cssSource.value).trim();
+                    let cssSafe = false;
+                    try {
+                        const cu = new URL(cssTarget, window.location.origin);
+                        cssSafe = cu.protocol === 'https:' || (cu.origin === window.location.origin && cu.pathname.startsWith('/'));
+                    } catch (e) { cssSafe = false; }
+                    if (cssSafe && link) link.href = cssTarget;
                 } else if (cssSource.type === 'inline') {
                     this.injectCSS(cssSource.value);
                 }
             }
             
-            // 获取注册的样式
-            const style = this.styles[Object.keys(this.styles).pop()];
+            // 获取注册的样式: 取本次脚本新注册的那个, 而不是最后一个
+            const style = this._lastRegisteredStyle || this.styles[Object.keys(this.styles).pop()];
             if (style) {
                 this.currentStyle = style;
                 if (style.onLoad) style.onLoad();
@@ -451,7 +469,12 @@ const StyleCore = {
      * 保存自定义样式到 localStorage
      */
     saveCustomStyles() {
-        localStorage.setItem('AerMusic_CustomStyles', JSON.stringify(this.customStyles));
+        try {
+            localStorage.setItem('AerMusic_CustomStyles', JSON.stringify(this.customStyles));
+        } catch (e) {
+            console.error('[StyleCore] 保存自定义样式失败(空间不足?):', e);
+            if (window.app && window.app.showToast) window.app.showToast('本地空间不足, 样式保存失败');
+        }
     },
     
     /**
@@ -460,7 +483,14 @@ const StyleCore = {
     restoreCustomStyles() {
         const saved = localStorage.getItem('AerMusic_CustomStyles');
         if (saved) {
-            this.customStyles = JSON.parse(saved);
+            try {
+                const parsed = JSON.parse(saved);
+                this.customStyles = Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                console.warn('[StyleCore] 自定义样式数据损坏, 已重置');
+                localStorage.removeItem('AerMusic_CustomStyles');
+                this.customStyles = [];
+            }
         }
     },
     
@@ -484,28 +514,19 @@ const StyleCore = {
     defaultLyricRender(lyricData, options) {
         const { lrc, tlyric, yrc, tList } = lyricData;
         const transClass = options.showTranslation ? 'show-trans' : '';
-        
+        const metaVal = (window.app && window.app.config && window.app.config.showMeta !== false) ? 'true' : 'false';
+        const contribVal = (window.app && window.app.config && window.app.config.showContributors === true) ? 'true' : 'false';
         let lyricHtml = '';
-        
         if (yrc) {
-            // 逐字歌词
             const arc = JSON.parse(lyrictolyric({ content: yrc, lyricinput: 'packyrc', lyricoutput: 'arc' }));
-            lyricHtml = KRC_TEMPLATE
-                .replace('{{KRC_JSON}}', JSON.stringify(arc))
-                .replace('{{TLYRIC_JSON}}', JSON.stringify(tList || []))
-                .replace('{{TRANS_CLASS}}', transClass);
+            lyricHtml = safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(KRC_TEMPLATE, '{{KRC_JSON}}', escapeScriptJson(JSON.stringify(arc))), '{{TLYRIC_JSON}}', escapeScriptJson(JSON.stringify(tList || []))), '{{TRANS_CLASS}}', transClass), '{{SHOW_META}}', metaVal), '{{SHOW_CONTRIBUTORS}}', contribVal);
         } else {
-            // 普通歌词
             const content = lrc || '[00:00.000] 暂无歌词';
             const arc = JSON.parse(lyrictolyric({ content, lyricinput: 'packlrc', lyricoutput: 'arc' }));
-            lyricHtml = LRC_TEMPLATE
-                .replace('{{LYRIC_CONTENT}}', arc.lyric.replace(/`/g, '\\`'))
-                .replace('{{TLYRIC_JSON}}', JSON.stringify(tList || []))
-                .replace('{{TRANS_CLASS}}', transClass);
+            lyricHtml = safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(LRC_TEMPLATE, '{{LYRIC_CONTENT}}', escapeScriptEmbed(arc.lyric)), '{{TLYRIC_JSON}}', escapeScriptJson(JSON.stringify(tList || []))), '{{TRANS_CLASS}}', transClass), '{{SHOW_META}}', metaVal), '{{SHOW_CONTRIBUTORS}}', contribVal);
         }
-        
         return lyricHtml;
-    }
+    },
 };
 
 // 全局访问外部资源的辅助对象
@@ -521,7 +542,7 @@ StyleCore.renderStyleList = function() {
         return;
     }
     
-    const currentId = localStorage.getItem('AerMusic_CurrentStyle') || '1';
+    const currentId = localStorage.getItem('AerMusic_CurrentStyle') || 'default';
     const styles = this.getStyleList();
     
     console.log('[StyleCore] 渲染样式列表，当前样式:', currentId, '可用样式:', styles.length);
@@ -533,8 +554,9 @@ StyleCore.renderStyleList = function() {
                 正在加载样式...
             </div>
         `;
-        // 延迟重新渲染
-        setTimeout(() => this.renderStyleList(), 500);
+        // 延迟重新渲染(限时, 样式系统加载失败就停在提示, 不无限轮询)
+        this._renderRetryCount = (this._renderRetryCount || 0) + 1;
+        if (this._renderRetryCount <= 20) setTimeout(() => this.renderStyleList(), 500);
         return;
     }
     
@@ -630,7 +652,7 @@ StyleCore.updateActiveStyle = function(styleId) {
     localStorage.setItem('AerMusic_CurrentStyle', styleId);
     
     // 更新 UI
-    document.querySelectorAll('.style-preview-card').forEach(card => {
+    document.querySelectorAll('[data-style-id]').forEach(card => {
         card.classList.remove('active');
         if (card.dataset.styleId === styleId) {
             card.classList.add('active');

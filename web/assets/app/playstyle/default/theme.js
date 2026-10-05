@@ -92,22 +92,23 @@ window.AerTheme = {
         const lyricHtml = song.lyricHtml || '';
         
         // 构建可点击的歌手名
+        const _esc = app.escapeHtml || ((s) => String(s));
         const artists = song.artists || [];
         let artistHtml = '';
         if (artists.length > 0 && artists[0].id) {
-            artistHtml = artists.map(a => `<span onclick="event.stopPropagation();app.openArtistPage(${a.id})" style="cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='var(--apple-red,#ff3b30)'" onmouseout="this.style.color=''">${a.name || a}</span>`).join(' / ');
+            artistHtml = artists.map(a => `<span onclick="event.stopPropagation();app.openArtistPage('${_esc(String(a.id))}')" style="cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='var(--apple-red,#ff3b30)'" onmouseout="this.style.color=''">${_esc(a.name || a)}</span>`).join(' / ');
         } else {
-            artistHtml = song.artist || '未知歌手';
+            artistHtml = _esc(song.artist || '未知歌手');
         }
 
         return `
             <div class="song-info-side advanced-layout">
-                <img src="${song.cover}"
+                <img src="${_esc(song.cover)}"
                      class="cover-art cover-large"
                      id="cover-${index}"
-                     alt="${song.name}">
+                     alt="${_esc(song.name)}">
                 <div class="title-meta">
-                    <h1 title="${song.name}">${song.name}</h1>
+                    <h1 title="${_esc(song.name)}">${_esc(song.name)}</h1>
                     <p>${artistHtml}</p>
                 </div>
                 ${secondaryControls}
@@ -151,7 +152,7 @@ window.AerTheme = {
         const loopMode = app?.loopMode || 'list';
         const quality = app?.config?.quality || '320k';
         const playbackRate = app?.config?.playbackRate || 1;
-        const volume = app ? Math.round(app.audio?.volume * 100 || 100) : 100;
+        const volume = app && app.audio ? Math.round((app.audio.volume ?? 1) * 100) : 100;
         bar.innerHTML = `
             <div class="genius-progress-container">
                 <div class="genius-progress-fill" id="fixed-seek-fill"></div>
@@ -1177,21 +1178,27 @@ window.AerTheme = {
                     ? `<svg viewBox="0 0 24 24" fill="var(--apple-red)" stroke="var(--apple-red)" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`
                     : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`;
 
-                const songDataAttr = encodeURIComponent(JSON.stringify(song));
                 actionsDiv.innerHTML = `
-                    <div class="action-btn" data-tooltip="添加到当前播放" onclick="event.stopPropagation(); app.addToCurrentPlayQueue(JSON.parse(decodeURIComponent('${songDataAttr}')))">
+                    <div class="action-btn" data-tooltip="添加到当前播放">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
                     </div>
-                    <div class="action-btn" title="添加到歌单" onclick="event.stopPropagation(); app.addToPlaylistHandler('${song.id}')">
+                    <div class="action-btn" title="添加到歌单">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 15h12M3 10h18M3 5h18M18 13v6M15 16h6"/></svg>
                     </div>
-                    <div class="action-btn collect-heart-${song.id} ${isFav ? 'active' : ''}" title="收藏" onclick="event.stopPropagation(); app.collectSongHandler('${song.id}')">
+                    <div class="action-btn ${isFav ? 'active' : ''}" title="收藏">
                         ${heartSvg}
                     </div>
-                    <div class="action-btn" title="下载" onclick="event.stopPropagation(); app.downloadSongHandler('${song.id}')">
+                    <div class="action-btn" title="下载">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
                     </div>
                 `;
+                const btns = actionsDiv.querySelectorAll('.action-btn');
+                const stop = (e) => e.stopPropagation();
+                btns[0].addEventListener('click', (e) => { stop(e); app.addToCurrentPlayQueue(song); });
+                btns[1].addEventListener('click', (e) => { stop(e); app.addToPlaylistHandler(String(song.id)); });
+                btns[2].addEventListener('click', (e) => { stop(e); app.collectSongHandler(String(song.id)); });
+                btns[2].classList.add(`collect-heart-${String(song.id).replace(/[^a-zA-Z0-9_-]/g, '')}`);
+                btns[3].addEventListener('click', (e) => { stop(e); app.downloadSongHandler(String(song.id)); });
             }
             return item;
         };
@@ -1417,9 +1424,9 @@ window.AerTheme = {
             const nameEl = document.getElementById('detail-pl-name');
             const descEl = document.getElementById('detail-pl-desc');
             const coverEl = document.getElementById('detail-pl-cover-input');
-            if (nameEl) nameEl.value = app.escapeHtml(nameEl.value);
-            if (descEl) descEl.value = app.escapeHtml(descEl.value);
-            if (coverEl) coverEl.value = app.escapeHtml(coverEl.value);
+            if (nameEl) nameEl.value = String(nameEl.value || '');
+            if (descEl) descEl.value = String(descEl.value || '');
+            if (coverEl) coverEl.value = String(coverEl.value || '');
             if (originalSavePlaylistMetadata) originalSavePlaylistMetadata.call(app, pId);
         };
 
@@ -1483,16 +1490,17 @@ window.AerTheme = {
                 const rawSongs = await platform.getAlbum(albumId);
                 if (rawSongs && rawSongs.length > 0) {
                     const songs = rawSongs.map(s => window.PlatformCore.normalizeSongData(s, 'cloudmusic'));
+                    const _esc2 = window.app && window.app.escapeHtml ? window.app.escapeHtml : ((x) => String(x));
                     const songsHtml = songs.map((s, idx) => `
-                        <div style="display:flex; align-items:center; gap:10px; padding:8px; border-radius:8px; background:rgba(255,255,255,0.03); margin-bottom:6px; cursor:pointer;" onclick="event.stopPropagation(); document.getElementById('apple-music-modal').remove(); app.playSearchResult(${JSON.stringify(s).replace(/"/g, '&quot;')})">
+                        <div data-play-idx="${idx}" style="display:flex; align-items:center; gap:10px; padding:8px; border-radius:8px; background:rgba(255,255,255,0.03); margin-bottom:6px; cursor:pointer;">
                             <span style="font-size:11px; color:rgba(255,255,255,0.4); width:20px; text-align:center;">${(idx+1).toString().padStart(2, '0')}</span>
                             <div style="flex:1; overflow:hidden; text-align: left;">
-                                <div style="font-size:13px; font-weight:bold; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${s.name}</div>
-                                <div style="font-size:11px; color:rgba(255,255,255,0.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px;">${s.artist}</div>
+                                <div style="font-size:13px; font-weight:bold; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${_esc2(s.name || '')}</div>
+                                <div style="font-size:11px; color:rgba(255,255,255,0.5); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px;">${_esc2(s.artist || '')}</div>
                             </div>
                         </div>
                     `).join('');
-                    app.showAppleModal(`专辑: ${albumName}`, `<div style="max-height: 250px; overflow-y: auto; padding-right: 4px; box-sizing: border-box;">${songsHtml}</div>`, () => {
+                    app.showAppleModal(`专辑: ${_esc2(albumName)}`, `<div style="max-height: 250px; overflow-y: auto; padding-right: 4px; box-sizing: border-box;">${songsHtml}</div>`, () => {
                         if (songs.length > 0) {
                             app.playlist = songs;
                             app.currentIndex = 0;
@@ -1503,6 +1511,18 @@ window.AerTheme = {
                     });
                     const confirmBtn = document.getElementById('apple-modal-confirm');
                     if (confirmBtn) confirmBtn.textContent = "播放整张专辑";
+                    const modalPanel = document.getElementById('apple-music-modal');
+                    if (modalPanel) {
+                        modalPanel.querySelectorAll('[data-play-idx]').forEach(row => {
+                            row.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                const s = songs[Number(row.dataset.playIdx)];
+                                if (!s) return;
+                                modalPanel.remove();
+                                app.playSearchResult(s);
+                            });
+                        });
+                    }
                 }
             } catch (e) {
                 this.showToast("加载专辑失败");
@@ -1638,10 +1658,16 @@ window.AerTheme = {
                 item.innerHTML = `
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1.6vh; height:1.6vh; opacity:0.5; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
                     <span class="name" style="flex:1;" title="${app.escapeHtml(kw)}">${app.escapeHtml(kw)}</span>
-                    <span style="cursor:pointer;opacity:0.3;font-size:12px;padding:2px 6px;" onclick="event.stopPropagation();(function(el,kw){var h=JSON.parse(localStorage.getItem('AerMusic_SearchHistory')||'[]').filter(function(x){return x!==kw;});localStorage.setItem('AerMusic_SearchHistory',JSON.stringify(h));el.closest('.suggest-item').remove();})(this,'${kw.replace(/'/g,"\\'")}')">✕</span>
+                    <span data-del-hist style="cursor:pointer;opacity:0.3;font-size:12px;padding:2px 6px;">✕</span>
                 `;
+                item.querySelector('[data-del-hist]').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const h = JSON.parse(localStorage.getItem('AerMusic_SearchHistory') || '[]').filter(x => x !== kw);
+                    localStorage.setItem('AerMusic_SearchHistory', JSON.stringify(h));
+                    item.remove();
+                });
                 item.onclick = (e) => { 
-                    if (e.target.closest('span[onclick]')) return;
+                    if (e.target.closest('[data-del-hist]')) return;
                     e.stopPropagation(); 
                     popup.style.display = 'none'; 
                     document.getElementById('searchInp').value = kw; 
@@ -1678,7 +1704,7 @@ window.AerTheme = {
         searchInp.oninput = (e) => {
             const val = e.target.value;
             clearTimeout(fetchTimer);
-            fetchSuggest(val);
+            fetchTimer = setTimeout(() => fetchSuggest(val), 250);
         };
         searchInp.onfocus = () => { 
             if (searchInp.value.trim() !== '') fetchSuggest(searchInp.value); 

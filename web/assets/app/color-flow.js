@@ -31,11 +31,12 @@
         },
 
         setColors(mainColor) {
-            if (!mainColor) return;
+            if (!mainColor || typeof mainColor !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(mainColor.trim())) return;
             try {
-                const r = parseInt(mainColor.slice(1, 3), 16);
-                const g = parseInt(mainColor.slice(3, 5), 16);
-                const b = parseInt(mainColor.slice(5, 7), 16);
+                const c = mainColor.trim();
+                const r = parseInt(c.slice(1, 3), 16);
+                const g = parseInt(c.slice(3, 5), 16);
+                const b = parseInt(c.slice(5, 7), 16);
                 this.targetColors = [
                     `rgb(${r},${g},${b})`,
                     `rgb(${Math.max(0, r - 40)},${Math.max(0, g - 40)},${Math.max(0, b - 40)})`,
@@ -82,7 +83,9 @@
                 ctx.fillRect(0, 0, w, h);
             }
 
-            this.animFrame = requestAnimationFrame(() => this.animate());
+            this.animFrame = requestAnimationFrame(() => {
+                try { this.animate(); } catch (e) { this.animFrame = requestAnimationFrame(() => this.animate()); }
+            });
         }
     };
 

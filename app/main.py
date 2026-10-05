@@ -58,6 +58,9 @@ async def server_error_handler(request: Request, exc):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.connect(cfg.DATABASE_PATH)
+    from setup import TABLES
+    for ddl in TABLES:
+        db.run(ddl)
     upstream.init()
     a(f"server started: {cfg.APP_NAME}")
     yield

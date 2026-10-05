@@ -128,7 +128,6 @@ const CloudMusicPlatform = {
             });
             let url = res.data.url;
             if (url) {
-                url = url.replace('http://', 'https://');
                 if (window.app?.getFastestUrl) {
                     url = await window.app.getFastestUrl(url);
                 }
@@ -198,7 +197,7 @@ const CloudMusicPlatform = {
             const buildJsonHead = (title, author, lineIndex) => {
                 if (!author) return '';
                 const timeMs = extraCount > 1 ? Math.floor(firstTime / extraCount * lineIndex) : 0;
-                return `{"t":${timeMs},"c":[{"tx":"${title}"},{"tx":"${author}"}]}\n`;
+                return `{"t":${timeMs},"c":[{"tx":${JSON.stringify(String(title))}},{"tx":${JSON.stringify(String(author))}}]}\n`;
             };
             const buildExtraHeaders = (isJson) => {
                 const build = isJson ? buildJsonHead : buildTimedHead;
@@ -217,7 +216,7 @@ const CloudMusicPlatform = {
 
             return {
                 lrc: mainLrc,
-                tlyric: data.ytlyric?.ytlyric || (data.tlyric?.lyric || ''),
+                tlyric: data.ytlyric?.lyric || (data.tlyric?.lyric || ''),
                 yrc: yrcStr,
                 tList, hasTranslation: tList.length > 0,
                 lyricauthor: lrcauthor, transauthor
@@ -231,15 +230,12 @@ const CloudMusicPlatform = {
     // ========== 推荐（优先读取后端预注入数据） ==========
 
     async getRecommend() {
-        // 优先使用后端预注入的数据（页面加载时已写入，零网络请求）
         const prefetched = window.__INITIAL_DATA__?.recommend;
         if (prefetched && prefetched.length > 0) {
             console.log('[CloudMusic] 使用后端预注入的推荐数据，歌曲数:', prefetched.length);
-            // 清除引用，下次调用走正常请求
             window.__INITIAL_DATA__.recommend = null;
-            return prefetched;
+            return prefetched.map(s => ({ ...s }));
         }
-        // 后续请求走后端内部路由
         try {
             const res = await axios.get(this.INFO.API.recommend);
             return res.data.data?.dailySongs || [];
@@ -272,7 +268,7 @@ const CloudMusicPlatform = {
 
     async _getSimilarSongs(songId) {
         const data = await this._api(this.INFO.API.similar, { id: songId });
-        return data?.songs || [];
+        return data?.data?.songs || [];
     },
 
     async _getArtistTopSongs(artistId) {
@@ -284,7 +280,7 @@ const CloudMusicPlatform = {
     async _getSimilarArtistSongs(artistId) {
         if (!artistId) return [];
         const data = await this._api(this.INFO.API.simiArtist, { id: artistId });
-        const artists = data?.artists || [];
+        const artists = data?.data?.artists || [];
         if (artists.length === 0) return [];
         const picked = this._shuffle(artists).slice(0, 2);
         const results = await Promise.allSettled(picked.map(a => this._getArtistTopSongs(a.id)));
@@ -305,7 +301,7 @@ const CloudMusicPlatform = {
                 this._api(this.INFO.API.personalized, { limit: 20 }),
             ]);
             const ids = [];
-            if (hot.status === 'fulfilled' && hot.value?.playlists) ids.push(...hot.value.playlists.map(p => p.id));
+            if (hot.status === 'fulfilled' && hot.value?.playlist?.playlists) ids.push(...hot.value.playlist.playlists.map(p => p.id));
             if (rec.status === 'fulfilled' && rec.value?.result) ids.push(...rec.value.result.map(p => p.id));
             this._heartbeat.hotPlaylistIds = this._shuffle([...new Set(ids)]);
             this._heartbeat.hotPlaylistCursor = 0;
@@ -367,27 +363,29 @@ const CloudMusicPlatform = {
     },
 
     normalizeSong(rawSong) {
+        const pic = rawSong.al?.picUrl || rawSong.album?.picUrl || '';
         return {
             id: rawSong.id,
             name: rawSong.name || '未知歌曲',
             artist: this.formatArtists(rawSong.ar || rawSong.artists),
             album: rawSong.al?.name || rawSong.album?.name || '',
-            cover: (rawSong.al?.picUrl || rawSong.album?.picUrl || '') + '?param=600y600',
-            coverSmall: (rawSong.al?.picUrl || rawSong.album?.picUrl || '') + '?param=200y200',
-            coverLarge: (rawSong.al?.picUrl || rawSong.album?.picUrl || '') + '?param=1000y1000',
+            cover: pic ? pic + '?param=600y600' : '',
+            coverSmall: pic ? pic + '?param=200y200' : '',
+            coverLarge: pic ? pic + '?param=1000y1000' : '',
             duration: rawSong.dt || 0,
-            artists: (rawSong.ar || rawSong.artists || []).map(a => ({ id: a.id, name: a.name })),
+            artists: (Array.isArray(rawSong.ar) ? rawSong.ar : Array.isArray(rawSong.artists) ? rawSong.artists : [])
+                .map(a => ({ id: a.id, name: a.name })),
             albumId: rawSong.al?.id || rawSong.album?.id,
             platform: this.INFO.ID,
             platformName: this.INFO.NAME,
-            platformColor: this.INFO.COLOR,
-            _raw: rawSong
+            platformColor: this.INFO.COLOR
         };
     },
 
     formatArtists(artists) {
+        if (typeof artists === 'string') return artists || '未知歌手';
         if (!artists || !artists.length) return '未知歌手';
-        return artists.map(a => a.name).join(' / ');
+        return artists.map(a => a.name || a).join(' / ');
     },
 
     normalizeArtist(rawArtist) {

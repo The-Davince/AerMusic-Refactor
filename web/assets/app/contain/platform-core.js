@@ -42,8 +42,11 @@ const PlatformCore = {
             }
         }
         
+        if (this.activePlatforms.includes(id)) return true;
         this.platforms[id] = platform;
         this.activePlatforms.push(id);
+        this.restoreActivePlatforms();
+        if (!this.activePlatforms.includes(id)) this.activePlatforms.push(id);
         
         console.log(`[PlatformCore] 平台已注册: ${platform.INFO.NAME} (${id})`);
         return true;
@@ -96,8 +99,14 @@ const PlatformCore = {
     restoreActivePlatforms() {
         const saved = localStorage.getItem('AerMusic_ActivePlatforms');
         if (saved) {
-            const savedList = JSON.parse(saved);
-            this.activePlatforms = savedList.filter(id => this.platforms[id]);
+            try {
+                const savedList = JSON.parse(saved);
+                if (Array.isArray(savedList)) {
+                    this.activePlatforms = savedList.filter(id => this.platforms[id]);
+                }
+            } catch (e) {
+                localStorage.removeItem('AerMusic_ActivePlatforms');
+            }
         }
     },
     
@@ -115,11 +124,15 @@ const PlatformCore = {
             if (!platform) return;
             
             try {
-                const rawResults = await platform.search(keyword, { limit });
-                // 转换为统一格式
-                results[platformId] = rawResults.map(song => 
-                    this.normalizeSongData(song, platformId)
-                );
+                const rawResults = await platform.search(keyword, { limit, type: options.type });
+                results[platformId] = [];
+                for (const song of (rawResults || [])) {
+                    try {
+                        results[platformId].push(this.normalizeSongData(song, platformId));
+                    } catch (e) {
+                        console.warn(`[PlatformCore] ${platformId} 单条结果转换失败:`, e);
+                    }
+                }
             } catch (e) {
                 console.error(`[PlatformCore] ${platformId} 搜索失败:`, e);
                 results[platformId] = [];
@@ -190,6 +203,7 @@ const PlatformCore = {
      */
     normalizeSongData(rawSong, platformId) {
         const platform = this.platforms[platformId];
+        if (!platform || !rawSong) return null;
         
         // 如果平台有自己的标准化方法，优先使用
         if (platform.normalizeSong) {
