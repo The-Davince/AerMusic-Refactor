@@ -1,0 +1,23 @@
+* { margin: 0; padding: 0; font-family: "MiSans Semibold", sans-serif; user-select: none; -webkit-user-select: none;}
+body { background-color: rgba(0, 0, 0, 0); color: #666; text-align: center; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+.container { position: relative; height: 80vh; width: 100%; overflow: hidden; margin: auto; padding: 0 5vw; -webkit-mask-image: linear-gradient(to top, transparent 0%, black 20%, black 80%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 20%, black 80%, transparent 100%); }
+.container::-webkit-scrollbar { display: none; }
+.container ul { list-style: none; transition: transform 0.6s cubic-bezier(0.25, 0.1, 0.2, 1); }
+.container ul li { height: auto; padding: 1.5vh 0; line-height: 1.2; font-size: 3vh; white-space: pre-wrap; word-wrap: break-word; cursor: pointer; border-radius: 1vh; padding: 1vh 2vh; transition: background 0.3s ease, color 0.6s ease, transform 0.6s ease;}
+.lyric-img { height: 1.3em; width: 1.3em; border-radius: 50%; vertical-align: middle; margin: 0 4px; display: inline-block; object-fit: cover; }
+.container ul li.active { color: #fff; /** transform: scale(1.15); **/ transform-origin: center; z-index: 10; }
+.container ul li.active-noanim { color: #fff; /** transform: scale(1.15); **/ transform-origin: center; transition: none; z-index: 10; }
+.karaoke-word { display: inline-block; position: relative; background-image: linear-gradient(90deg, #fff 0%, #afafaf 0%); background-clip: text; -webkit-background-clip: text; color: transparent; transition: background-image 0.05s linear; }
+.trans-line { display: none; font-size: 2.5vh; color: rgba(255,255,255,0.5); margin-top: 0.8vh; font-weight: normal; transform: scale(0.95); transform-origin: center; background: none; -webkit-background-clip: initial; }
+body.show-trans .trans-line { display: block; }
+.container::before { content: ""; position: absolute; top: 0; left: 10%; right: 0; bottom: 0; z-index: -1; -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 20%, rgba(0, 0, 0, 0) 80%, rgba(0, 0, 0, 1) 100%); }
+.container ul li:hover {background: rgba(255, 255, 255, 0.08);}
+/** 260502FIX **/
+.container ul li {position: relative;width: 100%;margin: 0.8vh 0;padding: 1.2vh 0;cursor: pointer;border-radius: 1.5vh;transition: background 0.3s ease, transform 0.6s ease;display: block;}
+.lyric-wrapper {width: 82%;margin: 0 auto;text-align: center;transform-origin: center center;transform: scale(1);transition: transform 0.6s cubic-bezier(0.25, 0.1, 0.2, 1), color 0.6s ease;white-space: normal; word-break: break-word;overflow-wrap: break-word;pointer-events: none;}
+.active .lyric-wrapper {transform: scale(1.15);color: #fff !important;}
+.active-noanim .lyric-wrapper {transform: scale(1.15);color: #fff !important;transition: none !important;}
+.karaoke-word {display: inline; position: relative;background-image: linear-gradient(90deg, #fff 0%, #afafaf 0%);background-clip: text;-webkit-background-clip: text;color: transparent;}
+
+.active .lyric-wrapper {color: var(--active-color, #fff) !important;}
+.karaoke-word {background-image: linear-gradient(90deg, var(--active-color, #fff) 0%, #afafaf 0%);}

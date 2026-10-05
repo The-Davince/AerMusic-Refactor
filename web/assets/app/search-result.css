@@ -1,0 +1,424 @@
+/**
+ * AerMusic 搜索结果条状样式
+ * 类似网易云音乐客户端的搜索结果展示
+ */
+
+/* 搜索结果容器 */
+#search-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.95);
+    backdrop-filter: blur(2vh);
+    z-index: 1500;
+    display: none;
+    overflow: hidden;
+    padding: 8vh 5vw;
+}
+
+#search-overlay.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 平台分类标签栏 */
+.platform-tabs {
+    display: flex;
+    gap: 1.5vh;
+    margin-bottom: 3vh;
+    padding: 0 1vh;
+    flex-wrap: wrap;
+}
+
+.platform-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.8vh;
+    padding: 1vh 2vh;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2vh;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 0.1vh solid transparent;
+}
+
+.platform-tab:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.platform-tab.active {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.platform-tab .icon {
+    width: 2.2vh;
+    height: 2.2vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.platform-tab .name {
+    font-size: 1.6vh;
+    color: #fff;
+}
+
+.platform-tab .count {
+    font-size: 1.3vh;
+    color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.1);
+    padding: 0.3vh 0.8vh;
+    border-radius: 1vh;
+}
+
+/* 搜索结果网格 - 双栏布局 */
+.result-grid-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 1vh;
+}
+
+.result-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(45vw, 1fr));
+    gap: 1.2vh 2vw;
+}
+
+@media (max-width: 900px) {
+    .result-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 单条搜索结果 */
+.result-item {
+    display: flex;
+    align-items: center;
+    gap: 1.5vh;
+    padding: 1.5vh;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 1.2vh;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    border: 0.1vh solid transparent;
+}
+
+.result-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 结果条封面 */
+.result-cover {
+    width: 6vh;
+    height: 6vh;
+    border-radius: 0.8vh;
+    object-fit: cover;
+    flex-shrink: 0;
+    box-shadow: 0 0.3vh 1vh rgba(0, 0, 0, 0.3);
+}
+
+/* 结果条信息 */
+.result-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4vh;
+}
+
+.result-title {
+    font-size: 1.6vh;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.result-artist {
+    font-size: 1.3vh;
+    color: rgba(255, 255, 255, 0.6);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.result-meta {
+    display: flex;
+    align-items: center;
+    gap: 1vh;
+    font-size: 1.2vh;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.result-album {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 15vh;
+}
+
+.result-duration {
+    flex-shrink: 0;
+}
+
+/* 来源平台标签 */
+.result-platform {
+    display: flex;
+    align-items: center;
+    gap: 0.4vh;
+    padding: 0.3vh 0.8vh;
+    border-radius: 0.8vh;
+    font-size: 1.1vh;
+    flex-shrink: 0;
+}
+
+.result-platform .icon {
+    width: 1.4vh;
+    height: 1.4vh;
+}
+
+/* 悬停操作按钮 */
+.result-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.8vh;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    padding-right: 1vh;
+}
+
+.result-item:hover .result-actions {
+    opacity: 1;
+}
+
+.action-btn {
+    width: 3.5vh;
+    height: 3.5vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.1);
+}
+
+.action-btn svg {
+    width: 1.8vh;
+    height: 1.8vh;
+    color: #fff;
+}
+
+/* 无结果提示 */
+.no-result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 30vh;
+    color: rgba(255, 255, 255, 0.5);
+    gap: 2vh;
+}
+
+.no-result svg {
+    width: 8vh;
+    height: 8vh;
+    opacity: 0.3;
+}
+
+.no-result p {
+    font-size: 1.8vh;
+}
+
+/* 加载状态 */
+.search-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 20vh;
+    gap: 1.5vh;
+}
+
+.search-loading .spinner {
+    width: 3vh;
+    height: 3vh;
+    border: 0.3vh solid rgba(255, 255, 255, 0.2);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.search-loading span {
+    font-size: 1.5vh;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* 搜索结果数量统计 */
+.result-stats {
+    display: flex;
+    align-items: center;
+    gap: 2vh;
+    padding: 1vh 2vh;
+    margin-bottom: 2vh;
+    font-size: 1.3vh;
+    color: rgba(255, 255, 255, 0.5);
+    flex-wrap: wrap;
+}
+
+.result-stats .total {
+    color: #fff;
+    font-weight: 600;
+}
+
+/* 搜索类型标签 */
+.search-type-tabs {
+    display: flex;
+    gap: 0;
+    margin-left: 3vh;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 0;
+}
+
+.search-type-tab {
+    cursor: pointer;
+    padding: 0.8vh 2vh;
+    font-size: 1.3vh;
+    transition: all 0.3s ease;
+    color: rgba(255,255,255,0.4);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+}
+
+.search-type-tab:hover {
+    color: rgba(255,255,255,0.7);
+}
+
+.search-type-tab.active {
+    color: var(--apple-red, #ff3b30);
+    border-bottom-color: var(--apple-red, #ff3b30);
+    font-weight: 600;
+}
+
+/* 返回按钮 */
+.back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.8vh;
+    padding: 1.2vh 2vh;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 1.5vh;
+    cursor: pointer;
+    font-size: 1.5vh;
+    color: #fff;
+    margin-bottom: 2vh;
+    transition: all 0.3s ease;
+}
+
+.back-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* 返回列表按钮（歌单详情页） */
+.back-to-list-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.8vh;
+    padding: 1.2vh 2vh;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 1.5vh;
+    cursor: pointer;
+    font-size: 1.5vh;
+    color: #fff;
+    margin-bottom: 2vh;
+    transition: all 0.3s ease;
+}
+
+.back-to-list-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* 列表视图样式 */
+.result-grid.list-view {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0 !important;
+}
+
+.result-grid.list-view .result-item {
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.result-grid.grid-view {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(45vw, 1fr)) !important;
+    gap: 1.2vh 2vw !important;
+}
+
+/* 视图切换按钮 */
+.view-toggle-btns {
+    display: flex;
+    gap: 4px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 2px;
+}
+
+.view-toggle-btn {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.4);
+    cursor: pointer;
+    padding: 6px 10px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.view-toggle-btn:hover {
+    color: rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.08);
+}
+
+.view-toggle-btn.active {
+    color: #fff;
+    background: rgba(255,255,255,0.15);
+}
+
+/* 歌手页/专辑页覆盖层 */
+.sub-page-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.95);
+    backdrop-filter: blur(2vh);
+    z-index: 1500;
+    overflow-y: auto;
+    padding: 8vh 5vw;
+}
+
+#artist-overlay, #album-overlay {
+    z-index: 1550;
+}
+
+/* 歌手链接/专辑链接样式 */
+.artist-link:hover, .album-link:hover {
+    color: var(--apple-red, #ff3b30) !important;
+}
