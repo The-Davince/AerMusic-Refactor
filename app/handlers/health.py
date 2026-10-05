@@ -1,3 +1,5 @@
+import time
+
 from fastapi import APIRouter, Request
 
 import config as cfg
@@ -8,6 +10,7 @@ router = APIRouter()
 
 @router.get("/health")
 async def health(req: Request):
-    elapsed = getattr(req.state, "elapsed_ms", 0)
+    t0 = getattr(req.state, "t0", None)
+    latency = round((time.time() - t0) * 1000, 1) if t0 else 0
     return {"code": 0, "msg": "ok", "logId": get_log_id(req),
-            "data": {"status": "ok", "latency": elapsed, "version": cfg.APP_VERSION, "appName": cfg.APP_NAME}}
+            "data": {"status": "ok", "latency": latency, "version": cfg.APP_VERSION, "appName": cfg.APP_NAME}}

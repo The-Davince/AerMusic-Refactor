@@ -10,25 +10,33 @@
         history: 'AerMusic_History'
     };
     const SYNC_TS_KEY = 'AerMusic_Sync_Timestamps';
-    const state = { user: null, pushTimer: null, lastPushed: {}, restoring: false };
+    const state = { user: null, pushTimer: null, lastPushed: {}, restoring: false, failCount: 0 };
 
     function readTS() {
         try { return JSON.parse(localStorage.getItem(SYNC_TS_KEY) || '{}'); } catch (e) { return {}; }
     }
     function writeTS(ts) { localStorage.setItem(SYNC_TS_KEY, JSON.stringify(ts)); }
+    function resetSyncState() {
+        state.lastPushed = {};
+        writeTS({});
+        state.failCount = 0;
+    }
 
-    function api(method, url, body) {
-        const opts = { method, headers: {} };
+    function api(method, url, body, opts) {
+        const o = opts || {};
+        const init = { method, headers: {}, keepalive: !!o.keepalive };
         if (body !== undefined) {
-            opts.headers['Content-Type'] = 'application/json';
-            opts.body = JSON.stringify(body);
+            init.headers['Content-Type'] = 'application/json';
+            init.body = JSON.stringify(body);
         }
-        return fetch(url, opts).then(async (r) => {
+        return fetch(url, init).then(async (r) => {
             let data = null;
             try { data = await r.json(); } catch (e) {}
             if (!r.ok || !data || data.code !== 0) {
                 const msg = (data && data.msg) || ('请求失败 ' + r.status);
-                throw new Error(msg);
+                const err = new Error(msg);
+                err.status = r.status;
+                throw err;
             }
             return data;
         });
@@ -50,11 +58,24 @@
             let changed = false;
             Object.keys(KIND_KEYS).forEach((kind) => {
                 const remote = data[kind];
-                if (!remote || remote.data === null || remote.data === undefined) return;
+                if (!remote) return;
                 if ((ts[kind] || 0) >= (remote.updatedAt || 0)) return;
-                localStorage.setItem(KIND_KEYS[kind], JSON.stringify(remote.data));
+                if (remote.data === null || remote.data === undefined) {
+                    // 云端已清空: 移除本地键并记录时间戳, 保持多端一致
+                    localStorage.removeItem(KIND_KEYS[kind]);
+                    state.lastPushed[kind] = '';
+                } else {
+                    const raw = JSON.stringify(remote.data);
+                    if (localStorage.getItem(KIND_KEYS[kind]) === raw) {
+                        // 内容一致只推进时间戳, 避免多开设备互相触发刷新
+                        ts[kind] = remote.updatedAt;
+                        state.lastPushed[kind] = raw;
+                        return;
+                    }
+                    localStorage.setItem(KIND_KEYS[kind], raw);
+                    state.lastPushed[kind] = raw;
+                }
                 ts[kind] = remote.updatedAt;
-                state.lastPushed[kind] = JSON.stringify(remote.data);
                 changed = true;
             });
             writeTS(ts);
@@ -80,22 +101,40 @@
         state.pushTimer = setTimeout(() => pushAll(), 2000);
     }
 
-    async function pushAll() {
+    async function pushAll(opts) {
         if (!state.user || state.restoring) return;
+        const o = opts || {};
         const ts = readTS();
         const now = Date.now();
+        let anyFail = false;
         for (const kind of Object.keys(KIND_KEYS)) {
             const snap = snapshotKind(kind);
             if (snap === state.lastPushed[kind]) continue;
             try {
-                await api('PUT', '/api/library/' + kind, { data: snap === '' ? null : JSON.parse(snap), updatedAt: now });
-                state.lastPushed[kind] = snap;
-                ts[kind] = now;
+                const resp = await api('PUT', '/api/library/' + kind,
+                    { data: snap === '' ? null : JSON.parse(snap), updatedAt: now },
+                    { keepalive: !!o.keepalive });
+                const applied = resp.data && resp.data.applied !== false;
+                if (applied) {
+                    state.lastPushed[kind] = snap;
+                    ts[kind] = resp.data.updatedAt;
+                    state.failCount = 0;
+                } else {
+                    // 服务端有更新的版本, 本地被拒: 拉取覆盖, 不标记已同步
+                    anyFail = true;
+                    await pullAndRestore();
+                    return;
+                }
             } catch (e) {
+                anyFail = true;
+                state.failCount++;
                 console.warn('[CloudSync] 推送 ' + kind + ' 失败:', e.message);
+                if (e.status === 401) { state.user = null; renderBox(); return; }
+                if (state.failCount >= 5) { toast('云同步失败次数过多, 已暂停自动同步'); return; }
             }
         }
         writeTS(ts);
+        if (!anyFail) state.failCount = 0;
     }
 
     function watchLocal() {
@@ -105,7 +144,7 @@
                 if (snapshotKind(kind) !== state.lastPushed[kind]) { schedulePush(kind); break; }
             }
         }, 3000);
-        window.addEventListener('beforeunload', () => { if (state.user) pushAll(); });
+        window.addEventListener('beforeunload', () => { if (state.user) pushAll({ keepalive: true }); });
     }
 
     /* ---------- 播放历史 ---------- */
@@ -165,9 +204,10 @@
             box.querySelector('#acc-login').onclick = () => doAuth('/api/user/login');
             box.querySelector('#acc-register').onclick = () => doAuth('/api/user/register');
         } else {
+            const safeName = String(state.user.username).replace(/[^A-Za-z0-9_\u4e00-\u9fa5]/g, '');
             box.innerHTML = `
                 <div style="display:flex; align-items:center; gap:1.5vh; flex-wrap:wrap;">
-                    <span style="font-size:1.35vh; color:#fff;">已登录: ${state.user.username.replace(/[^A-Za-z0-9_\u4e00-\u9fa5]/g, '')}</span>
+                    <span style="font-size:1.35vh; color:#fff;">已登录: ${safeName}</span>
                     <div id="acc-sync" class="add-style-btn" style="cursor:pointer;">立即同步</div>
                     <div id="acc-logout" class="add-style-btn" style="cursor:pointer;background:rgba(255,59,48,0.2);color:#ff3b30;">退出登录</div>
                 </div>
@@ -185,6 +225,7 @@
         try {
             const resp = await api('POST', url, { username: name, password: pass });
             state.user = resp.data;
+            resetSyncState();
             toast(url.indexOf('register') > -1 ? '注册成功, 已登录' : '登录成功');
             renderBox();
             await pullAndRestore();
@@ -196,6 +237,7 @@
     async function doLogout() {
         try { await api('POST', '/api/user/logout'); } catch (e) {}
         state.user = null;
+        resetSyncState();
         toast('已退出登录');
         renderBox();
     }

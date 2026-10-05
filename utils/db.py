@@ -39,9 +39,13 @@ def get(sql: str, args: tuple = ()):
 
 def run(sql: str, args: tuple = ()) -> int:
     with _lock:
-        cur = _conn.execute(sql, args)
-        _conn.commit()
-        return cur.lastrowid
+        try:
+            cur = _conn.execute(sql, args)
+            _conn.commit()
+            return cur.lastrowid
+        except Exception:
+            _conn.rollback()
+            raise
 
 
 def run_many(sql: str, seq: list) -> None:

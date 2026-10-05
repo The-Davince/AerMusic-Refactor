@@ -1,5 +1,8 @@
 import time
+from urllib.parse import urlencode
+
 import httpx
+
 from . import cache
 from .log import log_ext
 import config as cfg
@@ -27,7 +30,9 @@ ENDPOINTS = {
     "playlist/track/all":   {"up": lambda: cfg.NETEASE_API_BASE + "/playlist/track/all","ttl": 600, "need": ("id",),                   "limit": True},
 }
 
-_NUM_RE = __import__("re").compile(r"^\d{1,15}(,\d{1,15})*$")
+import re as _re
+_NUM_RE = _re.compile(r"^\d{1,15}(,\d{1,15})*$")
+_ORDER_RE = _re.compile(r"^(hot|new)$")
 
 
 class UpstreamError(Exception):
@@ -55,9 +60,14 @@ def _build_params(name: str, ep: dict, qp) -> dict:
         val = (qp.get(field) or "").strip()
         if not val:
             raise UpstreamError(f"缺少参数 {field}", 400)
-        if field in ("id", "ids") and not _NUM_RE.match(val):
-            raise UpstreamError(f"参数 {field} 不合法", 400)
-        params[field] = val[:120]
+        if field in ("id", "ids"):
+            if not _NUM_RE.match(val):
+                raise UpstreamError(f"参数 {field} 不合法", 400)
+            if len(val) > 200:
+                raise UpstreamError(f"参数 {field} 过长", 400)
+        else:
+            val = val[:120]
+        params[field] = val
     if ep.get("limit"):
         try:
             limit = int(qp.get("limit") or 30)
@@ -72,7 +82,8 @@ def _build_params(name: str, ep: dict, qp) -> dict:
         params["type"] = t if t in (1, 10, 100) else 1
     if name == "top/playlist":
         params["cat"] = (qp.get("cat") or "华语").strip()[:40]
-        params["order"] = qp.get("order") or "hot"
+        order = (qp.get("order") or "hot").strip()[:10]
+        params["order"] = order if _ORDER_RE.match(order) else "hot"
     if ep.get("urlkey"):
         if not cfg.NETEASE_URL_KEY:
             raise UpstreamError("音源URL服务未配置", 500)
@@ -80,17 +91,24 @@ def _build_params(name: str, ep: dict, qp) -> dict:
     return params
 
 
+def _cacheKey(name: str, params: dict) -> str:
+    # urlencode 消除 &/= 歧义; key 不参与(避免秘钥进键)
+    clean = {k: v for k, v in params.items() if k != "key"}
+    return name + "|" + urlencode(sorted(clean.items()))
+
+
 async def fetch(name: str, qp) -> dict:
     ep = ENDPOINTS.get(name)
     if ep is None:
         raise UpstreamError(f"未知接口 {name}", 404)
     params = _build_params(name, ep, qp)
-    key = name + "|" + "&".join(f"{k}={params[k]}" for k in sorted(params))
+    key = _cacheKey(name, params)
     hit = cache.get(key)
     if hit is not None:
         return hit
     url = ep["up"]()
     last_err = None
+    data = None
     for attempt in range(max(1, cfg.UPSTREAM_RETRIES)):
         t0 = time.time()
         try:
@@ -101,12 +119,17 @@ async def fetch(name: str, qp) -> dict:
                 continue
             if resp.status_code >= 400:
                 raise UpstreamError("上游API请求失败", 502)
-            data = resp.json()
+            try:
+                data = resp.json()
+            except ValueError:
+                last_err = UpstreamError("上游响应不是合法JSON")
+                log_ext("netease", "GET", url, status=resp.status_code, resp_body="non-json body", elapsed_ms=(time.time() - t0) * 1000)
+                continue
             break
         except (httpx.TimeoutException, httpx.TransportError) as e:
             last_err = UpstreamError("上游API请求失败")
             log_ext("netease", "GET", url, status=0, resp_body=f"{type(e).__name__}: {e}", elapsed_ms=(time.time() - t0) * 1000)
-    else:
+    if data is None:
         raise last_err or UpstreamError("上游API请求失败")
     _post_process(name, data)
     cache.put(key, data, ep["ttl"])

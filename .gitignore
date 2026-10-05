@@ -18,3 +18,5 @@ vendor/
 AGENTS.md
 TASK.md
 ANOTHER.md
+.env.*
+!.env.example

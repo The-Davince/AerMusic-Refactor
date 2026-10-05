@@ -22,10 +22,10 @@ def _route(name: str):
         try:
             data = await upstream.fetch(name, req.query_params)
         except upstream.UpstreamError as e:
-            return JSONResponse(status_code=e.status, content={"code": e.status, "msg": e.msg, "logId": log_id})
+            return JSONResponse(status_code=e.status, content={"code": e.status, "msg": e.msg, "data": None, "logId": log_id})
         except Exception as e:
             a(f"music proxy {name} crashed: {type(e).__name__}: {e}", "ERROR", log_id)
-            return JSONResponse(status_code=500, content={"code": 500, "msg": "服务开小差了", "logId": log_id})
+            return JSONResponse(status_code=500, content={"code": 500, "msg": "服务开小差了", "data": None, "logId": log_id})
         resp = JSONResponse(data)
         resp.headers["X-Log-Id"] = log_id
         return resp

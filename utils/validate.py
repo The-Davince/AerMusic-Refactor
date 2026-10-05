@@ -1,6 +1,6 @@
 import re
 
-USERNAME_RE = re.compile(r"^[A-Za-z0-9_\u4e00-\u9fa5]{2,20}$")
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_\u4e00-\u9fa5]{2,20}\Z")
 
 
 def checkUsername(name: str) -> bool:

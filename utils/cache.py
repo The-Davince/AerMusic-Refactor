@@ -1,19 +1,22 @@
 import time
 import threading
-from .log import a
+
+import config as cfg
 
 _store: dict = {}
 _lock = threading.Lock()
 
 
 def _evict(now: float) -> None:
-    if len(_store) <= 400:
+    soft = max(100, cfg.CACHE_MAX_ENTRIES // 2)
+    hard = max(150, cfg.CACHE_MAX_ENTRIES)
+    if len(_store) <= soft:
         return
     dead = [k for k, (_, exp) in _store.items() if exp <= now]
     for k in dead:
         _store.pop(k, None)
-    if len(_store) > 700:
-        keep = sorted(_store.items(), key=lambda kv: kv[1][1], reverse=True)[:500]
+    if len(_store) > hard:
+        keep = sorted(_store.items(), key=lambda kv: kv[1][1], reverse=True)[:soft]
         _store.clear()
         _store.update(dict(keep))
 

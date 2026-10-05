@@ -1,7 +1,7 @@
 import time
 
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from utils.log import a, ga, set_req_log_id, clean_parent_chain, _get_real_ip
 
@@ -19,6 +19,7 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
         set_req_log_id(log_id, parent)
         request.state.reqId = log_id
         t0 = time.time()
+        request.state.t0 = t0
         try:
             resp = await call_next(request)
         except Exception as e:
@@ -39,9 +40,15 @@ class CorsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         import config as cfg
         origin = request.headers.get("origin", "")
-        resp = await call_next(request)
-        if origin and origin in cfg.CORS_ALLOWED_ORIGINS:
+        allowed = origin and origin in cfg.CORS_ALLOWED_ORIGINS
+        if request.method == "OPTIONS" and allowed:
+            resp = Response(status_code=204)
+        else:
+            resp = await call_next(request)
+        if allowed:
             resp.headers["Access-Control-Allow-Origin"] = origin
             resp.headers["Access-Control-Allow-Credentials"] = "true"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
+            resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
             resp.headers["Vary"] = "Origin"
         return resp

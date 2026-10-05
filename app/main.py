@@ -7,11 +7,12 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import config as cfg
 from utils import db, upstream
 from utils.log import a, get_log_id
-from app.middleware import RequestLogMiddleware, CorsMiddleware
+from app.middleware import RequestLogMiddleware, CorsMiddleware, SECURITY_HEADERS
 
 _WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -37,13 +38,14 @@ def _error_page(status_code: int, log_id: str):
 
 async def not_found_handler(request: Request, exc):
     if request.url.path.startswith("/api/"):
-        return JSONResponse(status_code=404, content={"code": 404, "msg": "接口不存在", "logId": get_log_id(request)})
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "接口不存在", "data": None, "logId": get_log_id(request)})
     return _error_page(404, get_log_id(request))
 
 
 async def http_exception_handler(request: Request, exc: HTTPException):
+    detail = getattr(exc, "detail", None) or "请求无效"
     if request.url.path.startswith("/api/"):
-        return JSONResponse(status_code=exc.status_code, content={"code": exc.status_code, "msg": "请求无效", "logId": get_log_id(request)})
+        return JSONResponse(status_code=exc.status_code, content={"code": exc.status_code, "msg": str(detail), "data": None, "logId": get_log_id(request)})
     return _error_page(exc.status_code, get_log_id(request))
 
 
@@ -51,8 +53,13 @@ async def server_error_handler(request: Request, exc):
     log_id = get_log_id(request)
     a(f"unhandled server error on {request.url.path}", "ERROR", log_id)
     if request.url.path.startswith("/api/"):
-        return JSONResponse(status_code=500, content={"code": 500, "msg": "服务器开小差了", "logId": log_id})
-    return _error_page(500, log_id)
+        resp = JSONResponse(status_code=500, content={"code": 500, "msg": "服务器开小差了", "data": None, "logId": log_id})
+    else:
+        resp = _error_page(500, log_id)
+    for k, v in SECURITY_HEADERS.items():
+        resp.headers.setdefault(k, v)
+    resp.headers["X-Log-Id"] = log_id
+    return resp
 
 
 @asynccontextmanager
@@ -79,11 +86,12 @@ app.add_middleware(RequestLogMiddleware)
 
 class AssetStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
-        resp = await super().get_response(path, scope)
+        try:
+            resp = await super().get_response(path, scope)
+        except StarletteHTTPException as e:
+            resp = JSONResponse(status_code=e.status_code, content={"code": e.status_code, "msg": "asset not found", "data": None, "logId": get_log_id(Request(scope))})
         if resp.status_code == 200:
             resp.headers["Cache-Control"] = "public, max-age=3600"
-        elif resp.status_code == 404:
-            resp = JSONResponse(status_code=404, content={"code": 404, "msg": "asset not found"})
         return resp
 
 
@@ -97,8 +105,15 @@ _index_cache: str = None
 def _renderIndex() -> str:
     global _index_cache
     if _index_cache is None:
-        raw = (_WEB_DIR / "index.html").read_text(encoding="utf-8")
-        _index_cache = raw.replace("__APP_VER__", cfg.APP_VERSION)
+        f = _WEB_DIR / "index.html"
+        if f.is_file():
+            raw = f.read_text(encoding="utf-8")
+            _index_cache = raw.replace("__APP_VER__", cfg.APP_VERSION)
+        else:
+            _index_cache = ('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
+                            '<title>AerMusic</title></head><body style="background:#121212;color:#fff;'
+                            'font-family:system-ui;display:flex;align-items:center;justify-content:center;'
+                            'height:100vh;margin:0">前端资源缺失, 请检查 web/index.html</body></html>')
     return _index_cache
 
 
@@ -114,12 +129,18 @@ async def index_html():
 
 @app.get("/favicon.ico")
 async def favicon_ico():
-    return FileResponse(_WEB_DIR / "favicon.ico", headers={"Cache-Control": "public, max-age=86400"})
+    p = _WEB_DIR / "favicon.ico"
+    if not p.is_file():
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "not found", "data": None})
+    return FileResponse(p, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/favicon.svg")
 async def favicon_svg():
-    return FileResponse(_WEB_DIR / "favicon.svg", headers={"Cache-Control": "public, max-age=86400"})
+    p = _WEB_DIR / "favicon.svg"
+    if not p.is_file():
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "not found", "data": None})
+    return FileResponse(p, headers={"Cache-Control": "public, max-age=86400"})
 
 
 def _load_routers():
