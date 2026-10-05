@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from utils import upstream
-from utils.log import get_log_id
+from utils.log import a, get_log_id
 
 router = APIRouter()
 
@@ -24,6 +24,7 @@ def _route(name: str):
         except upstream.UpstreamError as e:
             return JSONResponse(status_code=e.status, content={"code": e.status, "msg": e.msg, "logId": log_id})
         except Exception as e:
+            a(f"music proxy {name} crashed: {type(e).__name__}: {e}", "ERROR", log_id)
             return JSONResponse(status_code=500, content={"code": 500, "msg": "服务开小差了", "logId": log_id})
         resp = JSONResponse(data)
         resp.headers["X-Log-Id"] = log_id
