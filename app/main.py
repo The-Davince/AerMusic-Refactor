@@ -91,7 +91,8 @@ class AssetStaticFiles(StaticFiles):
         except StarletteHTTPException as e:
             resp = JSONResponse(status_code=e.status_code, content={"code": e.status_code, "msg": "asset not found", "data": None, "logId": get_log_id(Request(scope))})
         if resp.status_code == 200:
-            resp.headers["Cache-Control"] = "public, max-age=3600"
+            # 防缓存交给构建产物(文件hash), 这里用 ETag 协商: 文件没变 304, 变了立即生效
+            resp.headers["Cache-Control"] = "no-cache"
         return resp
 
 
@@ -99,32 +100,14 @@ if _WEB_DIR.exists():
     app.mount("/assets", AssetStaticFiles(directory=str(_WEB_DIR / "assets")), name="assets")
 
 
-_index_cache: str = None
-
-
-def _renderIndex() -> str:
-    global _index_cache
-    if _index_cache is None:
-        f = _WEB_DIR / "index.html"
-        if f.is_file():
-            raw = f.read_text(encoding="utf-8")
-            _index_cache = raw.replace("__APP_VER__", cfg.APP_VERSION)
-        else:
-            _index_cache = ('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
-                            '<title>AerMusic</title></head><body style="background:#121212;color:#fff;'
-                            'font-family:system-ui;display:flex;align-items:center;justify-content:center;'
-                            'height:100vh;margin:0">前端资源缺失, 请检查 web/index.html</body></html>')
-    return _index_cache
-
-
 @app.get("/")
 async def index():
-    return HTMLResponse(_renderIndex(), headers={"Cache-Control": "no-cache"})
+    return FileResponse(_WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/index.html")
 async def index_html():
-    return HTMLResponse(_renderIndex(), headers={"Cache-Control": "no-cache"})
+    return FileResponse(_WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/favicon.ico")

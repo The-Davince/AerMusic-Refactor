@@ -137,7 +137,7 @@ const StyleCore = {
                 // 加载 JS
                 await new Promise((resolve, reject) => {
                     const script = document.createElement('script');
-                    script.src = `${themeUrl}?v=${Date.now()}`;
+                    script.src = `${themeUrl}`;
                     script.onload = resolve;
                     script.onerror = reject;
                     document.head.appendChild(script);
@@ -193,7 +193,7 @@ const StyleCore = {
         if (styleInfo) {
             const link = document.getElementById('playstyle-link');
             if (link) {
-                link.href = `./assets/app/playstyle/${styleInfo.path}/style.css?v=${Date.now()}`;
+                link.href = `./assets/app/playstyle/${styleInfo.path}/style.css`;
             }
         }
         
@@ -219,7 +219,7 @@ const StyleCore = {
         try {
             // 加载 JS
             const script = document.createElement('script');
-            script.src = `./assets/app/playstyle/${styleId}/theme.js?v=${Date.now()}`;
+            script.src = `./assets/app/playstyle/${styleId}/theme.js`;
             
             await new Promise((resolve, reject) => {
                 script.onload = resolve;
@@ -230,7 +230,7 @@ const StyleCore = {
             // 加载 CSS（如果有）
             const link = document.getElementById('playstyle-link');
             if (link) {
-                link.href = `./assets/app/playstyle/${styleId}/style.css?v=${Date.now()}`;
+                link.href = `./assets/app/playstyle/${styleId}/style.css`;
             }
             
             return true;

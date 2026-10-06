@@ -2,7 +2,7 @@ import os
 import time
 
 APP_NAME = os.environ.get("APP_NAME", "AerMusic")
-# 部署版本号, 用于静态资源缓存击穿, 默认取启动时间戳
+# 部署版本号, 仅用于 about 页/健康检查展示, 默认取启动时间戳(防缓存由构建产物 hash 负责)
 APP_VERSION = os.environ.get("APP_VERSION") or str(int(time.time()))
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "5008"))
