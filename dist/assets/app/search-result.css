@@ -28,14 +28,14 @@
 }
 
 #search-overlay.is-open {
-    display: flex;
+    display: block;
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
 }
 
 #search-overlay.is-closing {
-    display: flex;
+    display: block;
     opacity: 0;
     visibility: hidden;
     transform: translateY(1vh);

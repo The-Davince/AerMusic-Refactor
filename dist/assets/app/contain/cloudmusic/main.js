@@ -163,6 +163,8 @@ const CloudMusicPlatform = {
             const name = typeof item?.name === 'string' ? item.name.trim().toLowerCase() : '';
             return [[id ? `${platform}:id:${id}` : '', Number(item?.score) || 0], [name ? `${platform}:name:${name}` : '', Number(item?.score) || 0]].filter(value => value[0]);
         }));
+        const exploration = Number(profile.exploration?.ratio);
+        const explorationRatio = Number.isFinite(exploration) ? Math.max(0.08, Math.min(0.35, exploration)) : 0.2;
         const recentArtists = new Map();
         if (!this._heartbeat.recommendProfilePromise) {
             const localFavorites = Array.isArray(app.favoriteSongs) ? app.favoriteSongs : [];
@@ -183,7 +185,7 @@ const CloudMusicPlatform = {
         });
         const playedIds = new Set(recentIds);
         if (app.masterHistory) [...app.masterHistory].forEach(id => playedIds.add(this._songId(id)));
-        return { playedIds, favoriteIds, favoriteAlbums, likedArtists, recentArtists, behaviorSongs, behaviorArtists, behaviorAlbums };
+        return { playedIds, favoriteIds, favoriteAlbums, likedArtists, recentArtists, behaviorSongs, behaviorArtists, behaviorAlbums, explorationRatio };
     },
 
     _behaviorScore(scores, keys, limit) {
@@ -445,6 +447,8 @@ const CloudMusicPlatform = {
         const results = await Promise.allSettled(sources.map(source => source.load()));
         if (profilePromise) await profilePromise;
         const signals = this._recommendSignals();
+        const exploreLimit = Math.max(2, Math.min(8, Math.round(24 * signals.explorationRatio)));
+        const explorationFactor = Math.max(0.65, Math.min(1.65, signals.explorationRatio / 0.2));
         const candidateMap = new Map();
         results.forEach((result, index) => {
             if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return;
@@ -457,7 +461,8 @@ const CloudMusicPlatform = {
                 const albumId = this._songId(song?.al?.id || song?.album?.id);
                 const candidate = candidateMap.get(id) || { song, id, artistIds, albumId, sources: new Set(), sourceWeight: 0 };
                 candidate.sources.add(source.id);
-                candidate.sourceWeight = Math.max(candidate.sourceWeight, source.weight);
+                const sourceWeight = source.id === 'new' ? source.weight * explorationFactor : source.weight;
+                candidate.sourceWeight = Math.max(candidate.sourceWeight, sourceWeight);
                 candidateMap.set(id, candidate);
             });
         });
@@ -479,8 +484,8 @@ const CloudMusicPlatform = {
             return { ...candidate, score };
         });
         const ranked = this._shuffle(candidates).sort((a, b) => b.score - a.score);
-        const direct = this._pickDiverse(ranked.filter(item => item.sources.has('similar')), 19);
-        const explore = this._pickDiverse(ranked.filter(item => !item.sources.has('similar')), 5);
+        const direct = this._pickDiverse(ranked.filter(item => item.sources.has('similar')), 24 - exploreLimit);
+        const explore = this._pickDiverse(ranked.filter(item => !item.sources.has('similar')), exploreLimit);
         const selected = [];
         let directIndex = 0;
         let exploreIndex = 0;

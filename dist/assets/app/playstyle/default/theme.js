@@ -158,7 +158,7 @@ window.AerTheme = {
 
         const bar = document.createElement("div");
         bar.id = "fixed-genius-bar";
-        bar.className = "hidden";
+        bar.className = "";
         const app = this.getApp();
         const loopMode = app?.loopMode || 'list';
         const quality = app?.config?.quality || '320k';
@@ -276,7 +276,6 @@ window.AerTheme = {
         bar.onmouseenter = () => { self.showBar(); self.resetTimer(); };
         bar.onmouseleave = () => self.resetTimer();
 
-        setTimeout(() => self.hideBar(), 3000);
     },
 
     showBar() {

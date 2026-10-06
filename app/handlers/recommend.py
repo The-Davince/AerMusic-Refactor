@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from app.handlers.auth import currentUser, readJsonBody
 from utils import db
 from utils.log import get_log_id
+from utils.rate_limit import allow_redis
 
 router = APIRouter()
 
@@ -218,6 +219,13 @@ def _parse_event(item, now):
 
 
 def _allow_event_rate(userid, amount):
+    redis_result = allow_redis(userid, amount, EVENT_RATE_LIMIT, 60)
+    if redis_result is not None:
+        return redis_result
+    return _allow_local_event_rate(userid, amount)
+
+
+def _allow_local_event_rate(userid, amount):
     now = time.monotonic()
     with _event_rate_lock:
         queue = _event_rate.setdefault(userid, deque())
@@ -282,6 +290,39 @@ def _event_score(item):
     if event == "playlist_add":
         return 2.0
     return 0
+
+
+def _feedback_profile(events, behavior_types):
+    starts = behavior_types.get("play_start", 0)
+    completes = behavior_types.get("play_complete", 0)
+    skips = behavior_types.get("play_skip", 0)
+    favorites = behavior_types.get("favorite_add", 0)
+    playlist_adds = behavior_types.get("playlist_add", 0)
+    terminal = completes + skips
+    completion_rate = completes / terminal if terminal else 0
+    skip_rate = skips / terminal if terminal else 0
+    favorite_rate = min(1, favorites / starts) if starts else 0
+    playlist_rate = min(1, playlist_adds / starts) if starts else 0
+    active_events = len(events)
+    exploration = 0.2
+    if 0 < active_events < 10:
+        exploration += 0.08
+    if completion_rate >= 0.7 and terminal >= 3:
+        exploration += 0.06
+    if skip_rate >= 0.5 and terminal >= 3:
+        exploration -= 0.08
+    if favorite_rate >= 0.2 and starts >= 3:
+        exploration += 0.03
+    exploration = max(0.08, min(0.35, exploration))
+    return {
+        "completionRate": round(completion_rate, 4),
+        "skipRate": round(skip_rate, 4),
+        "favoriteRate": round(favorite_rate, 4),
+        "playlistRate": round(playlist_rate, 4),
+        "activeEvents": active_events,
+        "sampleSize": terminal,
+        "exploration": round(exploration, 4),
+    }
 
 
 def _build_profile(userid):
@@ -389,6 +430,7 @@ def _build_profile(userid):
     behavior_song_values = behavior_song_values[:100]
 
     artist_signals = sort_signals(artists)
+    feedback = _feedback_profile(events, behavior_types)
     return {
         "favorites": {"count": favorite_count, "ids": favorite_ids, "keys": favorite_keys},
         "playlists": {"count": playlist_count, "songCount": playlist_song_count},
@@ -406,6 +448,15 @@ def _build_profile(userid):
             "albums": sort_signals(behavior_albums),
             "songs": behavior_song_values,
         },
+        "feedback": {
+            "completionRate": feedback["completionRate"],
+            "skipRate": feedback["skipRate"],
+            "favoriteRate": feedback["favoriteRate"],
+            "playlistRate": feedback["playlistRate"],
+            "activeEvents": feedback["activeEvents"],
+            "sampleSize": feedback["sampleSize"],
+        },
+        "exploration": {"ratio": feedback["exploration"]},
     }
 
 
@@ -429,7 +480,7 @@ async def postEvents(req: Request):
     raw_events = body.get("events") if isinstance(body.get("events"), list) else [body]
     if not raw_events or len(raw_events) > EVENT_MAX_BATCH:
         return _resp(req, 400, "事件数量不合法", 400)
-    if not _allow_event_rate(user["id"], len(raw_events)):
+    if not await asyncio.to_thread(_allow_event_rate, user["id"], len(raw_events)):
         return _resp(req, 429, "事件提交过于频繁", 429)
     now = int(time.time() * 1000)
     events = [parsed for item in raw_events if (parsed := _parse_event(item, now))]
