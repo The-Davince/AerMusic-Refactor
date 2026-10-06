@@ -11,6 +11,7 @@
     };
     const SYNC_TS_KEY = 'AerMusic_Sync_Timestamps';
     const state = { user: null, pushTimer: null, lastPushed: {}, restoring: false, failCount: 0, restoreVersion: 0 };
+    const eventState = { queue: [], timer: null, sending: false, version: 0, controller: null, last: Object.create(null), failCount: 0 };
 
     function readTS() {
         try { return JSON.parse(localStorage.getItem(SYNC_TS_KEY) || '{}'); } catch (e) { return {}; }
@@ -19,6 +20,15 @@
     function resetSyncState() {
         clearTimeout(state.pushTimer);
         state.pushTimer = null;
+        clearTimeout(eventState.timer);
+        eventState.timer = null;
+        if (eventState.controller) eventState.controller.abort();
+        eventState.controller = null;
+        eventState.queue = [];
+        eventState.sending = false;
+        eventState.version++;
+        eventState.last = Object.create(null);
+        eventState.failCount = 0;
         state.restoreVersion++;
         state.restoring = false;
         state.lastPushed = {};
@@ -28,7 +38,7 @@
 
     function api(method, url, body, opts) {
         const o = opts || {};
-        const init = { method, headers: {}, keepalive: !!o.keepalive };
+        const init = { method, headers: {}, keepalive: !!o.keepalive, signal: o.signal };
         if (body !== undefined) {
             init.headers['Content-Type'] = 'application/json';
             init.body = JSON.stringify(body);
@@ -56,6 +66,97 @@
             window.CloudMusicPlatform.resetRecommendProfile();
         }
     }
+
+    function cleanText(value, limit) {
+        if (typeof value !== 'string' && typeof value !== 'number') return '';
+        const text = String(value).trim();
+        return text && text.length <= limit && !/[\u0000-\u001f\u007f]/.test(text) ? text : '';
+    }
+
+    function eventSong(song) {
+        if (!song || song.id === undefined || song.id === null || typeof song.id === 'boolean') return null;
+        const songId = cleanText(song.id, 128);
+        if (!songId) return null;
+        const artist = Array.isArray(song.artists) ? song.artists[0] : (Array.isArray(song.ar) ? song.ar[0] : null);
+        const album = song.album && typeof song.album === 'object' ? song.album : (song.al || null);
+        const payload = {
+            songId,
+            platform: cleanText(song.platform || song.platformId, 40) || 'cloudmusic',
+            artistId: cleanText(song.artistId || artist?.id, 128),
+            artistName: cleanText(song.artist || artist?.name, 120),
+            albumId: cleanText(song.albumId || album?.id, 128),
+            albumName: cleanText(typeof song.album === 'string' ? song.album : album?.name, 120)
+        };
+        return payload;
+    }
+
+    function normalizeNumber(value, max) {
+        const number = Number(value);
+        return Number.isFinite(number) && number >= 0 && number <= max ? Math.round(number * 1000) / 1000 : undefined;
+    }
+
+    async function flushEvents(opts) {
+        if (!state.user || eventState.sending || !eventState.queue.length) return;
+        const userId = state.user.userId;
+        const version = eventState.version;
+        const batch = eventState.queue.splice(0, 50);
+        eventState.sending = true;
+        const controller = new AbortController();
+        eventState.controller = controller;
+        try {
+            await api('POST', '/api/recommend/events', { events: batch }, { keepalive: true, signal: controller.signal });
+            if (eventState.version === version && state.user && state.user.userId === userId) eventState.failCount = 0;
+        } catch (e) {
+            if (eventState.version === version && state.user && state.user.userId === userId) {
+                eventState.queue = batch.concat(eventState.queue).slice(-100);
+                eventState.failCount++;
+                if (eventState.failCount < 5) {
+                    clearTimeout(eventState.timer);
+                    eventState.timer = setTimeout(() => flushEvents(), 5000);
+                }
+                if (e.status === 401) {
+                    state.user = null;
+                    resetSyncState();
+                    resetRecommendProfile();
+                    renderBox();
+                }
+            }
+        } finally {
+            if (eventState.version === version) {
+                eventState.sending = false;
+                eventState.controller = null;
+            }
+        }
+        if (eventState.version === version && state.user && state.user.userId === userId && eventState.queue.length) flushEvents();
+    }
+
+    function recordEvent(event, song, extra) {
+        if (!state.user || !['play_start', 'play_progress', 'play_complete', 'play_skip', 'favorite_add', 'favorite_remove', 'playlist_add'].includes(event)) return;
+        const base = eventSong(song);
+        if (!base) return;
+        const now = Date.now();
+        const key = event + ':' + base.platform + ':' + base.songId;
+        const data = Object.assign({ event, at: now }, base);
+        const o = extra || {};
+        const position = normalizeNumber(o.position, 86400);
+        const duration = normalizeNumber(o.duration || song.duration, 86400);
+        if (position !== undefined) data.position = position;
+        if (duration !== undefined) data.duration = duration;
+        const last = eventState.last[key];
+        if (event === 'play_progress') {
+            if (last && position !== undefined && last.position !== undefined && position >= last.position && position - last.position < 10) return;
+        } else if (last && now - last.at < 1500) return;
+        eventState.last[key] = { at: now, position };
+        eventState.queue.push(data);
+        if (eventState.queue.length > 100) eventState.queue.splice(0, eventState.queue.length - 100);
+        if (eventState.queue.length >= 20) flushEvents();
+        else {
+            clearTimeout(eventState.timer);
+            eventState.timer = setTimeout(() => flushEvents(), event === 'play_progress' ? 3000 : 1000);
+        }
+    }
+
+    window.AerMusicRecommendEvents = { record: recordEvent, flush: flushEvents };
 
     /* ---------- 拉取 ---------- */
     async function pullAndRestore() {
@@ -168,7 +269,12 @@
                 if (snapshotKind(kind) !== state.lastPushed[kind]) { schedulePush(kind); break; }
             }
         }, 3000);
-        window.addEventListener('beforeunload', () => { if (state.user) pushAll({ keepalive: true }); });
+        window.addEventListener('beforeunload', () => {
+            if (state.user) {
+                pushAll({ keepalive: true });
+                flushEvents({ keepalive: true });
+            }
+        });
     }
 
     /* ---------- 播放历史 ---------- */
@@ -288,6 +394,7 @@
                 window.app.play = (index) => {
                     const song = window.app.playlist && window.app.playlist[index];
                     recordHistory(song);
+                    recordEvent('play_start', song, { position: 0, duration: song && song.duration });
                     return originalPlay(index);
                 };
             }

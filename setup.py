@@ -25,7 +25,23 @@ TABLES = [
         updatedat INTEGER NOT NULL,
         PRIMARY KEY(userid, kind)
     )""",
+    """CREATE TABLE IF NOT EXISTS recommend_events(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        userid INTEGER NOT NULL,
+        event TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        songid TEXT NOT NULL,
+        artistid TEXT NOT NULL DEFAULT '',
+        artistname TEXT NOT NULL DEFAULT '',
+        albumid TEXT NOT NULL DEFAULT '',
+        albumname TEXT NOT NULL DEFAULT '',
+        position REAL,
+        duration REAL,
+        createdat INTEGER NOT NULL
+    )""",
     """CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expiresat)""",
+    """CREATE INDEX IF NOT EXISTS idx_recommend_events_user_time ON recommend_events(userid, createdat DESC, id DESC)""",
+    """CREATE INDEX IF NOT EXISTS idx_recommend_events_user_event ON recommend_events(userid, event, createdat DESC)""",
 ]
 
 

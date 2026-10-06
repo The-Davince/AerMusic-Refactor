@@ -149,6 +149,20 @@ const CloudMusicPlatform = {
         const favoriteIds = ids(favoriteValues);
         const favoriteAlbums = ids(profile.albums);
         const likedArtists = ids(profile.likedArtists);
+        const behavior = profile.behavior || {};
+        const behaviorSongs = new Map((Array.isArray(behavior.songs) ? behavior.songs : []).map(item => [item.key || this._songKey(item), Number(item.score) || 0]).filter(item => item[0]));
+        const behaviorArtists = new Map((Array.isArray(behavior.artists) ? behavior.artists : []).flatMap(item => {
+            const platform = item?.platform || this.INFO.ID;
+            const id = this._songId(item);
+            const name = typeof item?.name === 'string' ? item.name.trim().toLowerCase() : '';
+            return [[id ? `${platform}:id:${id}` : '', Number(item?.score) || 0], [name ? `${platform}:name:${name}` : '', Number(item?.score) || 0]].filter(value => value[0]);
+        }));
+        const behaviorAlbums = new Map((Array.isArray(behavior.albums) ? behavior.albums : []).flatMap(item => {
+            const platform = item?.platform || this.INFO.ID;
+            const id = this._songId(item);
+            const name = typeof item?.name === 'string' ? item.name.trim().toLowerCase() : '';
+            return [[id ? `${platform}:id:${id}` : '', Number(item?.score) || 0], [name ? `${platform}:name:${name}` : '', Number(item?.score) || 0]].filter(value => value[0]);
+        }));
         const recentArtists = new Map();
         if (!this._heartbeat.recommendProfilePromise) {
             const localFavorites = Array.isArray(app.favoriteSongs) ? app.favoriteSongs : [];
@@ -169,7 +183,15 @@ const CloudMusicPlatform = {
         });
         const playedIds = new Set(recentIds);
         if (app.masterHistory) [...app.masterHistory].forEach(id => playedIds.add(this._songId(id)));
-        return { playedIds, favoriteIds, favoriteAlbums, likedArtists, recentArtists };
+        return { playedIds, favoriteIds, favoriteAlbums, likedArtists, recentArtists, behaviorSongs, behaviorArtists, behaviorAlbums };
+    },
+
+    _behaviorScore(scores, keys, limit) {
+        let score = 0;
+        keys.forEach(key => {
+            if (key) score = Math.max(score, scores.get(key) || 0);
+        });
+        return Math.max(-limit, Math.min(limit, score));
     },
 
     _pickDiverse(items, limit) {
@@ -207,13 +229,17 @@ const CloudMusicPlatform = {
             const id = this._songId(song);
             const artistIds = this._artistIds(song);
             const albumId = this._songId(song?.al?.id || song?.album?.id || song?.albumId);
+            const albumKey = albumId ? `${song?.platform || this.INFO.ID}:id:${albumId}` : '';
             const recentCount = artistIds.reduce((max, artistId) => Math.max(max, signals.recentArtists.get(artistId) || 0), 0);
             const popularity = Number(song.popularity ?? song.pop ?? 0);
             let score = Math.min(0.1, Math.max(0, popularity) / 1000);
             if (signals.favoriteIds.has(id) || signals.favoriteIds.has(this._songKey(song))) score += 1.2;
             if (artistIds.some(artistId => signals.likedArtists.has(artistId))) score += 0.8;
-            if (albumId && signals.favoriteAlbums.has(albumId)) score += 0.55;
+            if (albumId && (signals.favoriteAlbums.has(albumId) || signals.favoriteAlbums.has(albumKey))) score += 0.55;
             if (signals.playedIds.has(id) || signals.playedIds.has(this._songKey(song))) score -= 0.7;
+            score += this._behaviorScore(signals.behaviorSongs, [this._songKey(song)], 4) * 0.2;
+            score += this._behaviorScore(signals.behaviorArtists, artistIds, 4) * 0.12;
+            score += this._behaviorScore(signals.behaviorAlbums, [albumKey], 4) * 0.1;
             score -= Math.min(0.36, recentCount * 0.12);
             return { song, artistIds, score };
         });
@@ -444,6 +470,9 @@ const CloudMusicPlatform = {
             if (liked) score += 0.24;
             if (signals.favoriteIds.has(candidate.id) || signals.favoriteIds.has(this._songKey(candidate.song))) score += 0.3;
             if (candidate.albumId && (signals.favoriteAlbums.has(candidate.albumId) || signals.favoriteAlbums.has(`${this.INFO.ID}:id:${candidate.albumId}`))) score += 0.16;
+            score += this._behaviorScore(signals.behaviorSongs, [this._songKey(candidate.song)], 4) * 0.16;
+            score += this._behaviorScore(signals.behaviorArtists, candidate.artistIds, 4) * 0.1;
+            score += this._behaviorScore(signals.behaviorAlbums, [candidate.albumId ? `${candidate.song?.platform || this.INFO.ID}:id:${candidate.albumId}` : ''], 4) * 0.08;
             score += Math.min(0.1, Math.max(0, popularity) / 1000);
             score += Math.min(0.08, (candidate.sources.size - 1) * 0.04);
             score -= Math.min(0.42, recentCount * 0.14);
