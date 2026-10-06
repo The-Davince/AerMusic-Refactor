@@ -12,7 +12,7 @@ DATABASE_PATH = os.environ.get("DATABASE_PATH", os.path.join("data", "aermusic.d
 
 # 登录会话
 SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL_SECONDS", "2592000"))
-SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "False").lower() == "true"
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "True").lower() == "true"
 
 # 网易云上游, key 从 .env 读, 不再写死在代码里
 NETEASE_API_BASE = os.environ.get("NETEASE_API_BASE", "http://localhost:3000").rstrip("/")
@@ -39,5 +39,5 @@ CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS"
 # 封面代理白名单域名(取色用, 图片跨域无CORS头时前端取不到像素)
 COVER_ALLOW_HOSTS = [o.strip() for o in os.environ.get(
     "COVER_ALLOW_HOSTS",
-    "p1.music.126.net,p2.music.126.net,p3.music.126.net,p4.music.126.net,p5.music.126.net,p6.music.126.net,y.music.126.net,127.0.0.1",
+    "p1.music.126.net,p2.music.126.net,p3.music.126.net,p4.music.126.net,p5.music.126.net,p6.music.126.net,y.music.126.net",
 ).split(",") if o.strip()]

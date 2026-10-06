@@ -1,3 +1,6 @@
+import asyncio
+import socket
+from ipaddress import ip_address
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
@@ -35,6 +38,13 @@ def _route(name: str):
     return handler
 
 
+def _is_blocked_address(value: str) -> bool:
+    address = ip_address(value)
+    return any((not address.is_global, address.is_private, address.is_loopback,
+                address.is_link_local, address.is_reserved, address.is_unspecified,
+                address.is_multicast))
+
+
 for _name in _ROUTES:
     router.add_api_route(f"/{_name}", _route(_name), methods=["GET"])
 
@@ -49,19 +59,35 @@ async def cover(req: Request):
     try:
         parsed = urlparse(u)
         host = (parsed.hostname or "").lower()
+        port = parsed.port
     except ValueError:
         return JSONResponse(status_code=400, content={"code": 400, "msg": "参数不合法", "data": None, "logId": log_id})
     if parsed.scheme not in ("http", "https") or not host:
         return JSONResponse(status_code=400, content={"code": 400, "msg": "参数不合法", "data": None, "logId": log_id})
+    try:
+        address = ip_address(host)
+        if _is_blocked_address(str(address)):
+            return JSONResponse(status_code=403, content={"code": 403, "msg": "来源不在白名单", "data": None, "logId": log_id})
+    except ValueError:
+        pass
+    if port not in (None, 80, 443):
+        return JSONResponse(status_code=403, content={"code": 403, "msg": "来源不在白名单", "data": None, "logId": log_id})
     if not any(host == h or host.endswith("." + h) for h in cfg.COVER_ALLOW_HOSTS):
         return JSONResponse(status_code=403, content={"code": 403, "msg": "来源不在白名单", "data": None, "logId": log_id})
+    try:
+        resolved = await asyncio.to_thread(socket.getaddrinfo, host, port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
+        addresses = {item[4][0] for item in resolved if item[4]}
+        if not addresses or any(_is_blocked_address(value) for value in addresses):
+            return JSONResponse(status_code=403, content={"code": 403, "msg": "来源不在白名单", "data": None, "logId": log_id})
+    except (OSError, ValueError):
+        return JSONResponse(status_code=502, content={"code": 502, "msg": "封面地址无法解析", "data": None, "logId": log_id})
     key = "cover|" + u
     hit = cache.get(key)
     if hit is not None:
         body, ctype = hit
     else:
         try:
-            resp = await upstream._client.get(u, timeout=10)
+            resp = await upstream._client.get(u, timeout=10, follow_redirects=False)
         except Exception as e:
             a(f"cover proxy failed: {u} {type(e).__name__}", "WARN", log_id)
             return JSONResponse(status_code=502, content={"code": 502, "msg": "封面获取失败", "data": None, "logId": log_id})

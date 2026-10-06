@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 _MINIFY_JS = os.environ.get("MINIFY_JS", "1") not in ("0", "false", "False")
+_REQUIRE_JS_MANGLE = os.environ.get("MINIFY_REQUIRE_MANGLE", "1") not in ("0", "false", "False")
 _STATIC_RE = re.compile(r'(src|href)="/static/([^"\'#?]+)"')
 _CSS_URL_RE = re.compile(r"url\(\s*(['\"]?)([^'\")\s]+)\1\s*\)")
 _JS_STATIC_RE = re.compile(r'["\']/static/([^"\'#?]+)["\']')
@@ -162,11 +163,14 @@ def _rewrite_html(text: str, ref_map: dict) -> str:
 
 
 def _minify_all(texts):
-    """批量 JS 压缩(esbuild 优先, rjsmin 降级); 失败原样返回, 不阻断构建."""
+    """批量 JS 压缩, 生产默认要求 esbuild 完成变量重命名."""
     if not _MINIFY_JS:
         return list(texts)
-    from utils.jsmin import minify_many
-    return minify_many(texts)
+    from utils.jsmin import minify_backend, minify_many
+    output = minify_many(texts)
+    if _REQUIRE_JS_MANGLE and minify_backend() != "esbuild":
+        raise RuntimeError("JS minify requires esbuild; install Node/esbuild or set MINIFY_REQUIRE_MANGLE=0")
+    return output
 
 
 def _rewrite_js(text: str, js_rel: str, ref_map: dict) -> str:

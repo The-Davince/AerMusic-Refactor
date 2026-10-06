@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 _ESBUILD_BIN = os.environ.get("ESBUILD_BIN", "esbuild")
+_LAST_BACKEND = "none"
 
 def _esbuild_cmd():
     root = Path(__file__).resolve().parent.parent
@@ -58,17 +59,23 @@ def _rjsmin_run(text):
         return ""
 
 def minify_many(texts):
+    global _LAST_BACKEND
     texts = list(texts or [])
     if not texts:
         return texts
     outs = _esbuild_run(texts)
     if len(outs) != len(texts) or not all(outs):
+        _LAST_BACKEND = "rjsmin"
         fallback = [""] * len(texts)
         for i, text in enumerate(texts):
             alt = _rjsmin_run(text)
             fallback[i] = alt if alt else text
         return fallback
+    _LAST_BACKEND = "esbuild"
     return outs
+
+def minify_backend() -> str:
+    return _LAST_BACKEND
 
 def minify_js(text: str) -> str:
     return minify_many([text])[0] if text else text

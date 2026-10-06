@@ -93,10 +93,15 @@ window.AerTheme = {
         
         // 构建可点击的歌手名
         const _esc = app.escapeHtml || ((s) => String(s));
+        const _id = (value) => /^\d{1,15}$/.test(String(value ?? '').trim()) ? String(value).trim() : '';
         const artists = song.artists || [];
         let artistHtml = '';
-        if (artists.length > 0 && artists[0].id) {
-            artistHtml = artists.map(a => `<span onclick="event.stopPropagation();app.openArtistPage('${_esc(String(a.id))}')" style="cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='var(--apple-red,#ff3b30)'" onmouseout="this.style.color=''">${_esc(a.name || a)}</span>`).join(' / ');
+        if (artists.length > 0) {
+            artistHtml = artists.map(a => {
+                const id = _id(a.id);
+                const name = _esc(a.name || a);
+                return id ? `<span data-artist-id="${id}" style="cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='var(--apple-red,#ff3b30)'" onmouseout="this.style.color=''">${name}</span>` : name;
+            }).join(' / ');
         } else {
             artistHtml = _esc(song.artist || '未知歌手');
         }
@@ -142,6 +147,12 @@ window.AerTheme = {
      * 渲染完成后的回调（仅主题特定的视觉初始化）
      */
     onRendered(song, index, container) {
+        container?.querySelectorAll('[data-artist-id]').forEach(el => {
+            el.addEventListener('click', e => {
+                e.stopPropagation();
+                this.getApp()?.openArtistPage?.(el.dataset.artistId);
+            });
+        });
         this.updateOlCard();
         if (document.getElementById("fixed-genius-bar")) return;
 
@@ -1032,8 +1043,20 @@ window.AerTheme = {
             if (olArtist) {
                 // 构建可点击的歌手名
                 const artists = song.artists || [];
-                if (artists.length > 0 && artists[0].id) {
-                    olArtist.innerHTML = artists.map(a => `<span onclick="event.stopPropagation();app.openArtistPage(${a.id})" style="cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='var(--apple-red,#ff3b30)'" onmouseout="this.style.color=''">${a.name || a}</span>`).join(' / ');
+                if (artists.length > 0) {
+                    const _id = (value) => /^\d{1,15}$/.test(String(value ?? '').trim()) ? String(value).trim() : '';
+                    const _esc = app.escapeHtml || ((s) => String(s));
+                    olArtist.innerHTML = artists.map(a => {
+                        const id = _id(a.id);
+                        const name = _esc(a.name || a);
+                        return id ? `<span data-artist-id="${id}" style="cursor:pointer;transition:color 0.2s;" onmouseover="this.style.color='var(--apple-red,#ff3b30)'" onmouseout="this.style.color=''">${name}</span>` : name;
+                    }).join(' / ');
+                    olArtist.querySelectorAll('[data-artist-id]').forEach(el => {
+                        el.addEventListener('click', e => {
+                            e.stopPropagation();
+                            app.openArtistPage(el.dataset.artistId);
+                        });
+                    });
                 } else {
                     olArtist.innerText = song.artist || '未知歌手';
                 }
