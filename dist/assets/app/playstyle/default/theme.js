@@ -787,10 +787,16 @@ window.AerTheme = {
                 overflow-y: auto;
                 z-index: 10006;
                 display: none;
+                opacity: 0;
+                visibility: hidden;
+                transform: translateY(-0.5vh);
+                transition: opacity 0.18s ease, visibility 0.18s ease, transform 0.18s ease;
                 flex-direction: column;
                 padding: 6px;
                 box-sizing: border-box;
             }
+            .search-suggest-popup.is-open { opacity: 1; visibility: visible; transform: translateY(0); }
+            .search-suggest-popup.is-closing { opacity: 0; visibility: hidden; transform: translateY(-0.5vh); pointer-events: none; }
             .suggest-title {
                 font-size: 11px;
                 color: rgba(255, 255, 255, 0.35);
@@ -926,7 +932,7 @@ window.AerTheme = {
         const hideSearchBtn = document.getElementById('hideSearch');
         if (hideSearchBtn) {
             hideSearchBtn.onclick = () => {
-                document.getElementById('search-overlay').style.display = 'none';
+                app.closeOverlay('search-overlay');
                 app.switchPage('recommend');
                 document.body.classList.remove("search-active");
             };
@@ -1231,7 +1237,10 @@ window.AerTheme = {
         // Apple Music 风格模态框（增强版）
         app.showAppleModal = function(title, contentHtml, onConfirm, onCancel, options) {
             let modal = document.getElementById('apple-music-modal');
-            if (modal) modal.remove();
+            if (modal) {
+                if (typeof modal.close === 'function') modal.close();
+                else modal.remove();
+            }
             
             const opts = options || {};
             const confirmText = opts.confirmText || '确定';
@@ -1260,20 +1269,34 @@ window.AerTheme = {
                 </div>
             `;
             document.body.appendChild(modal);
+            const panel = modal.querySelector('#apple-modal-panel');
             setTimeout(() => {
+                if (!modal.isConnected) return;
                 modal.style.opacity = '1';
-                document.getElementById('apple-modal-panel').style.transform = 'scale(1)';
+                panel.style.transform = 'scale(1)';
             }, 10);
             const close = () => {
+                if (!modal.isConnected || modal.dataset.closing === '1') return;
+                modal.dataset.closing = '1';
+                clearTimeout(modal._closeTimer);
                 modal.style.opacity = '0';
-                document.getElementById('apple-modal-panel').style.transform = 'scale(0.95)';
-                setTimeout(() => modal.remove(), 300);
+                panel.style.transform = 'scale(0.95)';
+                modal._closeTimer = setTimeout(() => {
+                    if (modal.isConnected) modal.remove();
+                    delete modal.dataset.closing;
+                }, 300);
             };
+            modal.close = close;
+            app.closeAppleModal = close;
             if (!hideFooter) {
                 modal.querySelector('#apple-modal-cancel').onclick = () => { if (onCancel) onCancel(); close(); };
                 modal.querySelector('#apple-modal-confirm').onclick = () => {
-                    if (onConfirm) { const result = onConfirm(modal); if (result === false) return; }
-                    close();
+                    let result;
+                    try {
+                        if (onConfirm) result = onConfirm(modal);
+                    } finally {
+                        if (result !== false) close();
+                    }
                 };
             }
             modal.onclick = (e) => { if (e.target === modal) close(); };
@@ -1305,7 +1328,7 @@ window.AerTheme = {
                 <label style="display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; background: rgba(255,255,255,0.03); margin-bottom: 8px; cursor: pointer; border: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;">
                     <input type="radio" name="apple-playlist-select" value="${idx}" ${idx === 0 ? 'checked' : ''} style="accent-color: var(--apple-red); cursor: pointer;">
                     <div style="flex:1; text-align: left;">
-                        <div style="font-weight: bold; color: #fff; font-size: 14px;">${pl.name}</div>
+                        <div style="font-weight: bold; color: #fff; font-size: 14px;">${app.escapeHtml(pl.name || '未命名歌单')}</div>
                         <div style="font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 2px;">${pl.songs?.length || 0} 首歌曲</div>
                     </div>
                 </label>
@@ -1541,7 +1564,7 @@ window.AerTheme = {
                                 e.stopPropagation();
                                 const s = songs[Number(row.dataset.playIdx)];
                                 if (!s) return;
-                                modalPanel.remove();
+                                app.closeAppleModal();
                                 app.playSearchResult(s);
                             });
                         });
@@ -1573,7 +1596,7 @@ window.AerTheme = {
                 // settings 页面保留 search-active 和 theme-overlay，不清理
                 if (val !== 'search' && val !== 'settings') {
                     const searchOverlay = document.getElementById('search-overlay');
-                    if (searchOverlay) searchOverlay.style.display = 'none';
+                    if (searchOverlay) app.closeOverlay(searchOverlay);
                     document.body.classList.remove('search-active', 'page-search', 'page-search-center', 'page-search-results');
                 }
                 if (val === 'recommend') {
@@ -1644,11 +1667,39 @@ window.AerTheme = {
             popup.className = 'search-suggest-popup';
             container.appendChild(popup);
         }
+        const showSuggest = () => {
+            clearTimeout(popup._closeTimer);
+            delete popup.dataset.closing;
+            popup.classList.remove('is-closing');
+            popup.style.display = 'flex';
+            requestAnimationFrame(() => popup.classList.add('is-open'));
+        };
+        const hideSuggest = () => {
+            if (popup.dataset.closing === '1') return;
+            popup.dataset.closing = '1';
+            popup.classList.remove('is-open');
+            popup.classList.add('is-closing');
+            popup._closeTimer = setTimeout(() => {
+                popup.style.display = 'none';
+                popup.classList.remove('is-closing');
+                delete popup.dataset.closing;
+            }, 180);
+        };
+        this.showSearchSuggest = showSuggest;
+        this.hideSearchSuggest = hideSuggest;
         let fetchTimer = null;
         const app = this.getApp();
         
         // 搜索历史管理
-        const getHistory = () => JSON.parse(localStorage.getItem('AerMusic_SearchHistory') || '[]');
+        const getHistory = () => {
+            try {
+                const value = JSON.parse(localStorage.getItem('AerMusic_SearchHistory') || '[]');
+                return Array.isArray(value) ? value.filter(item => typeof item === 'string') : [];
+            } catch (e) {
+                try { localStorage.removeItem('AerMusic_SearchHistory'); } catch (e) {}
+                return [];
+            }
+        };
         const addToHistory = (kw) => {
             if (!kw || !kw.trim()) return;
             let history = getHistory().filter(h => h !== kw.trim());
@@ -1666,15 +1717,20 @@ window.AerTheme = {
         
         const renderHistory = () => {
             const history = getHistory();
-            if (history.length === 0) { popup.style.display = 'none'; return; }
+            if (history.length === 0) { hideSuggest(); return; }
             popup.innerHTML = '';
             const title = document.createElement('div');
             title.className = 'suggest-title';
             title.style.display = 'flex';
             title.style.justifyContent = 'space-between';
             title.style.alignItems = 'center';
-            title.innerHTML = `<span>搜索历史</span><span style="cursor:pointer;opacity:0.5;font-size:10px;" onclick="event.stopPropagation();(function(){localStorage.removeItem('AerMusic_SearchHistory');document.getElementById('search-suggest-popup').style.display='none';})();">清空</span>`;
+            title.innerHTML = `<span>搜索历史</span><span data-clear-history style="cursor:pointer;opacity:0.5;font-size:10px;">清空</span>`;
             popup.appendChild(title);
+            title.querySelector('[data-clear-history]').onclick = (e) => {
+                e.stopPropagation();
+                clearHistory();
+                hideSuggest();
+            };
             history.forEach(kw => {
                 const item = document.createElement('div');
                 item.className = 'suggest-item';
@@ -1685,21 +1741,21 @@ window.AerTheme = {
                 `;
                 item.querySelector('[data-del-hist]').addEventListener('click', (e) => {
                     e.stopPropagation();
-                    const h = JSON.parse(localStorage.getItem('AerMusic_SearchHistory') || '[]').filter(x => x !== kw);
+                    const h = getHistory().filter(x => x !== kw);
                     localStorage.setItem('AerMusic_SearchHistory', JSON.stringify(h));
                     item.remove();
                 });
                 item.onclick = (e) => { 
                     if (e.target.closest('[data-del-hist]')) return;
                     e.stopPropagation(); 
-                    popup.style.display = 'none'; 
+                    hideSuggest();
                     document.getElementById('searchInp').value = kw; 
                     addToHistory(kw);
                     app.search(kw); 
                 };
                 popup.appendChild(item);
             });
-            popup.style.display = 'flex';
+            showSuggest();
         };
         
         const fetchSuggest = async (query) => {
@@ -1708,13 +1764,13 @@ window.AerTheme = {
                 const cleanQuery = app.escapeHtml(query);
                 const platform = window.PlatformCore?.get('cloudmusic');
                 if (!platform || !platform.getSearchSuggest) {
-                    popup.style.display = 'none';
+                    hideSuggest();
                     return;
                 }
                 const result = await platform.getSearchSuggest(cleanQuery);
                 if (result) this.renderSuggestions(result);
-                else popup.style.display = 'none';
-            } catch (e) { popup.style.display = 'none'; }
+                else hideSuggest();
+            } catch (e) { hideSuggest(); }
         };
         
         // 保存原始搜索函数并增强
@@ -1733,7 +1789,7 @@ window.AerTheme = {
             if (searchInp.value.trim() !== '') fetchSuggest(searchInp.value); 
             else renderHistory();
         };
-        document.addEventListener('click', (e) => { if (!container.contains(e.target)) popup.style.display = 'none'; });
+        document.addEventListener('click', (e) => { if (!container.contains(e.target)) hideSuggest(); });
     },
 
     renderSuggestions(result) {
@@ -1742,7 +1798,7 @@ window.AerTheme = {
         if (!popup || !app) return;
         popup.innerHTML = '';
         const { songs, albums, order } = result;
-        if (!order || order.length === 0) { popup.style.display = 'none'; return; }
+        if (!order || order.length === 0) { this.hideSearchSuggest?.(); return; }
         let hasData = false;
         order.forEach(type => {
             if (type === 'songs' && songs && songs.length > 0) {
@@ -1760,7 +1816,7 @@ window.AerTheme = {
                         <span class="name" title="${app.escapeHtml(song.name)}">${app.escapeHtml(song.name)}</span>
                         <span class="artist" title="${app.escapeHtml(artist)}">${app.escapeHtml(artist)}</span>
                     `;
-                    item.onclick = (e) => { e.stopPropagation(); popup.style.display = 'none'; document.getElementById('searchInp').value = song.name; app.playSuggestSong(song); };
+                    item.onclick = (e) => { e.stopPropagation(); this.hideSearchSuggest?.(); document.getElementById('searchInp').value = song.name; app.playSuggestSong(song); };
                     popup.appendChild(item);
                 });
             }
@@ -1779,12 +1835,13 @@ window.AerTheme = {
                         <span class="name" title="${app.escapeHtml(album.name)}">${app.escapeHtml(album.name)}</span>
                         <span class="artist" title="${app.escapeHtml(artist)}">${app.escapeHtml(artist)}</span>
                     `;
-                    item.onclick = (e) => { e.stopPropagation(); popup.style.display = 'none'; document.getElementById('searchInp').value = album.name; app.loadSuggestAlbum(album.id, album.name); };
+                    item.onclick = (e) => { e.stopPropagation(); this.hideSearchSuggest?.(); document.getElementById('searchInp').value = album.name; app.loadSuggestAlbum(album.id, album.name); };
                     popup.appendChild(item);
                 });
             }
         });
-        popup.style.display = hasData ? 'flex' : 'none';
+        if (hasData) this.showSearchSuggest?.();
+        else this.hideSearchSuggest?.();
     }
 };
 

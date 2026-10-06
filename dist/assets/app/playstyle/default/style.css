@@ -43,7 +43,8 @@
     bottom: 3vh;
     left: 50%;
     z-index: 2000;
-    width: 80vh;
+    width: min(80vh, calc(100vw - 4vh));
+    max-width: calc(100vw - 4vh);
     height: 8vh;
     background: rgba(20, 20, 20, 0.6);
     backdrop-filter: blur(3vh);
@@ -252,6 +253,10 @@
     opacity: 1;
 }
 
+@media (hover: none), (pointer: coarse) {
+    .result-actions { opacity: 1; pointer-events: auto; }
+}
+
 .action-btn svg {
     width: 2vh;
     height: 2vh;
@@ -349,6 +354,16 @@
 @keyframes popup-in {
     from { opacity: 0; transform: translateY(10px) scale(0.95); }
     to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.popup-menu.is-closing {
+    animation: popup-out 0.18s ease forwards;
+    pointer-events: none;
+}
+
+@keyframes popup-out {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(6px) scale(0.96); }
 }
 
 .popup-menu-title {
@@ -495,7 +510,8 @@
     position: fixed;
     right: 2vh;
     bottom: 8vh;
-    width: 35vh;
+    width: min(35vh, calc(100vw - 4vh));
+    max-width: calc(100vw - 4vh);
     max-height: 50vh;
     background: rgba(20, 20, 20, 0.95);
     backdrop-filter: blur(20px);
@@ -512,6 +528,16 @@
 @keyframes playlist-in {
     from { opacity: 0; transform: translateY(20px) scale(0.95); }
     to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.playlist-panel.is-closing {
+    animation: playlist-out 0.18s ease forwards;
+    pointer-events: none;
+}
+
+@keyframes playlist-out {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(12px) scale(0.96); }
 }
 
 .playlist-header {
@@ -658,6 +684,10 @@
 .item-remove:hover {
     color: #ff4444;
     background: rgba(255, 68, 68, 0.1);
+}
+
+@media (hover: none), (pointer: coarse) {
+    .item-remove { opacity: 1; pointer-events: auto; }
 }
 
 .quality-menu {

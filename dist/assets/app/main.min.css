@@ -298,6 +298,18 @@ iframe {
     flex-direction: column;
     align-items: center;
 }
+#share-overlay-modal {
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+#share-overlay-modal.is-open { opacity: 1; }
+#share-overlay-modal.is-closing { opacity: 0; pointer-events: none; }
+#share-overlay-modal > div {
+    transform: scale(0.96);
+    transition: transform 0.25s ease;
+}
+#share-overlay-modal.is-open > div { transform: scale(1); }
+#share-overlay-modal.is-closing > div { transform: scale(0.96); }
 
 .toast-item {
     background: rgba(0, 0, 0, 0.35);
@@ -747,6 +759,19 @@ iframe { width: 100%; height: 100%; border: none; background: transparent; displ
     align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(1.3889vh);
 }
+#announcement-modal.modal-closing { animation: announcement-out 0.3s ease forwards; pointer-events: none; }
+#announcement-modal.modal-closing .modal-card { animation: modal-card-out 0.3s ease forwards; }
+@keyframes announcement-out { to { opacity: 0; } }
+@keyframes modal-card-out { to { opacity: 0; transform: scale(0.96) translateY(1vh); } }
+@media (prefers-reduced-motion: reduce) {
+    #announcement-modal.modal-closing,
+    #announcement-modal.modal-closing .modal-card,
+    #initial-loader,
+    .sub-page-overlay,
+    #theme-overlay,
+    #confirm-dialog,
+    .toast-item { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
 .modal-card {
     width: 46.2963vh; max-width: 90vw; background: rgba(30, 30, 30, 0.7);
     backdrop-filter: blur(2.7778vh); border-radius: 2.7778vh; padding: 3.7037vh;
@@ -1156,7 +1181,13 @@ body.page-search-results #search-overlay .result-grid-container {
     backdrop-filter: blur(40px); 
     background: rgba(10, 10, 10, 0.88);
     -webkit-backdrop-filter: blur(40px);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(1vh);
+    transition: opacity 0.25s ease, visibility 0.25s ease, transform 0.25s ease;
 }
+.sub-page-overlay.is-open { opacity: 1; visibility: visible; transform: translateY(0); }
+.sub-page-overlay.is-closing { opacity: 0; visibility: hidden; transform: translateY(1vh); pointer-events: none; }
 
 .sub-page-header {
     margin-bottom: 24px;

@@ -72,7 +72,11 @@ const StyleCore = {
                 toast.className = 'toast-item';
                 toast.innerText = message;
                 container.appendChild(toast);
-                setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3000);
+                setTimeout(() => {
+                    if (!toast.parentNode) return;
+                    toast.classList.add('fade-out');
+                    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 300);
+                }, 2700);
             } else {
                 console.log('[StyleCore Toast]', message);
             }
