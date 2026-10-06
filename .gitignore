@@ -12,7 +12,6 @@ __pycache__/
 keys/
 logs/
 data/
-dist/
 node_modules/
 vendor/
 AGENTS.md

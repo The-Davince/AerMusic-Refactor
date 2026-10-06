@@ -1,0 +1,70 @@
+@import url('https://cdn.xrbk.cn/fonts/MiSans-Thin/result.css');
+@import url('https://cdn.xrbk.cn/fonts/MiSans-ExtraLight/result.css');
+@import url('https://cdn.xrbk.cn/fonts/MiSans-Light/result.css');
+@import url('https://cdn.xrbk.cn/fonts/MiSans-Normal/result.css');
+@import url('https://cdn.xrbk.cn/fonts/MiSans-Regular/result.css');
+@import url('https://cdn.xrbk.cn/fonts/MiSans-Medium/result.css');
+@import url('https://cdn.xrbk.cn/fonts/MiSans-Demibold/result.css');
+@import url('https://cdn.xrbk.cn/fonts/MiSans-Semibold/result.css');
+@import url('https://cdn.xrbk.cn/fonts/MiSans-Bold/result.css');
+@import url('https://cdn.xrbk.cn/fonts/MiSans-Heavy/result.css');
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans Thin');
+  font-weight: 100;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans ExtraLight');
+  font-weight: 200;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans Light');
+  font-weight: 300;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans Normal');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans Regular');
+  font-weight: 450;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans Medium');
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans Demibold');
+  font-weight: 600;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans Semibold');
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans Bold');
+  font-weight: 900;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'MiSans';
+  src: local('MiSans Heavy');
+  font-weight: 950;
+  font-style: normal;
+}
