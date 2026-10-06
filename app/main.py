@@ -14,7 +14,9 @@ from utils import db, upstream
 from utils.log import a, get_log_id
 from app.middleware import RequestLogMiddleware, CorsMiddleware, SECURITY_HEADERS
 
-_WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+_PAGE_DIR = Path(__file__).resolve().parent.parent / "page"
+_PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
+_DIST_DIR = Path(__file__).resolve().parent.parent / "dist"
 
 _ERROR_MESSAGES = {
     400: "请求无效",
@@ -84,46 +86,48 @@ app.add_middleware(CorsMiddleware)
 app.add_middleware(RequestLogMiddleware)
 
 
-class AssetStaticFiles(StaticFiles):
+class CDNStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
-        try:
-            resp = await super().get_response(path, scope)
-        except StarletteHTTPException as e:
-            resp = JSONResponse(status_code=e.status_code, content={"code": e.status_code, "msg": "asset not found", "data": None, "logId": get_log_id(Request(scope))})
+        resp = await super().get_response(path, scope)
         if resp.status_code == 200:
-            # 防缓存交给构建产物(文件hash), 这里用 ETag 协商: 文件没变 304, 变了立即生效
-            resp.headers["Cache-Control"] = "no-cache"
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return resp
 
 
-if _WEB_DIR.exists():
-    app.mount("/assets", AssetStaticFiles(directory=str(_WEB_DIR / "assets")), name="assets")
+if _PUBLIC_DIR.exists():
+    app.mount("/static", CDNStaticFiles(directory=str(_PUBLIC_DIR)), name="static")
 
 
 @app.get("/")
 async def index():
-    return FileResponse(_WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
-
-
-@app.get("/index.html")
-async def index_html():
-    return FileResponse(_WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+    return FileResponse(_PAGE_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/favicon.ico")
 async def favicon_ico():
-    p = _WEB_DIR / "favicon.ico"
+    p = _DIST_DIR / "favicon.ico"
     if not p.is_file():
         return JSONResponse(status_code=404, content={"code": 404, "msg": "not found", "data": None})
     return FileResponse(p, headers={"Cache-Control": "public, max-age=86400"})
 
 
-@app.get("/favicon.svg")
-async def favicon_svg():
-    p = _WEB_DIR / "favicon.svg"
-    if not p.is_file():
-        return JSONResponse(status_code=404, content={"code": 404, "msg": "not found", "data": None})
-    return FileResponse(p, headers={"Cache-Control": "public, max-age=86400"})
+
+
+
+def _resolve_page(full_path: str):
+    page_dir = _PAGE_DIR.resolve()
+    if not full_path:
+        return page_dir / "index.html"
+    rel = full_path.replace("\\", "/").strip("/")
+    if not rel:
+        return page_dir / "index.html"
+    cand = page_dir / f"{rel}.html"
+    if cand.is_file() and cand.resolve().is_relative_to(page_dir):
+        return cand
+    idx = page_dir / rel / "index.html"
+    if idx.is_file() and idx.resolve().is_relative_to(page_dir):
+        return idx
+    return None
 
 
 def _load_routers():
@@ -137,3 +141,15 @@ def _load_routers():
 
 
 _load_routers()
+
+
+@app.get("/{full_path:path}")
+async def spa_fallback(request: Request, full_path: str):
+    if full_path == "api" or full_path.startswith("api/"):
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "接口不存在", "data": None, "logId": get_log_id(request)})
+    if full_path.startswith("static/"):
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "not found", "data": None, "logId": get_log_id(request)})
+    page = _resolve_page(full_path)
+    if page and page.is_file():
+        return FileResponse(page, headers={"Cache-Control": "no-cache"})
+    return _error_page(404, get_log_id(request))

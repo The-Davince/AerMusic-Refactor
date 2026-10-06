@@ -20,3 +20,6 @@ TASK.md
 ANOTHER.md
 .env.*
 !.env.example
+page/
+public/
+manifest.json

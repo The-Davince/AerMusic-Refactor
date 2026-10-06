@@ -43,22 +43,35 @@ def _stage(n, total, title):
     print("=" * 46, flush=True)
 
 
+def run_build():
+    _stage(1, 4, "构建前端资源 (build.py)")
+    build_py = os.path.join(_PROJECT_DIR, "build.py")
+    if not os.path.exists(build_py):
+        print("  SKIP 未找到 build.py, 跳过前端构建")
+        return
+    r = subprocess.run([sys.executable, build_py, "--fast"], cwd=_PROJECT_DIR)
+    if r.returncode != 0:
+        print("ERROR: 前端构建失败, 中止启动", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     import config as cfg
 
     print(f"{cfg.APP_NAME} 服务启动流程", flush=True)
+    run_build()
 
-    _stage(1, 3, "检查环境配置")
+    _stage(2, 4, "检查环境配置")
     if not cfg.NETEASE_URL_KEY:
         print("  WARN NETEASE_URL_KEY 未配置, 歌曲播放地址接口将不可用", file=sys.stderr)
     print(f"  OK  监听 {cfg.HOST}:{cfg.PORT}  数据库 {cfg.DATABASE_PATH}")
 
-    _stage(2, 3, "初始化数据库表结构 (setup.py)")
+    _stage(3, 4, "初始化数据库表结构 (setup.py)")
     from setup import main as setup_main
     setup_main()
     print("  OK  数据库初始化完成")
 
-    _stage(3, 3, "启动 HTTP 服务")
+    _stage(4, 4, "启动 HTTP 服务")
     print(f"  uvicorn app.main:app  host={cfg.HOST}  port={cfg.PORT}")
     _route_uvicorn_logs()
     uvicorn.run(
