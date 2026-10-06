@@ -182,11 +182,13 @@ const CloudMusicPlatform = {
             };
             
             const firstTime = Math.min(yrcStr ? getFirstTime(yrcStr, true) : 8000, mainLrc ? getFirstTime(mainLrc, false) : 8000) || 8000;
+            const showMeta = window.app?.config?.showMeta !== false;
+            const showContributors = window.app?.config?.showContributors !== false;
             let extraCount = 0;
-            if (lyricist) extraCount++;
-            if (composition) extraCount++;
-            if (lrcauthor || yrcauthor) extraCount++;
-            if (transauthor) extraCount++;
+            if (showMeta && lyricist) extraCount++;
+            if (showMeta && composition) extraCount++;
+            if (showContributors && (lrcauthor || yrcauthor)) extraCount++;
+            if (showContributors && transauthor) extraCount++;
 
             const buildTimedHead = (title, author, lineIndex) => {
                 if (!author) return '';
@@ -202,17 +204,16 @@ const CloudMusicPlatform = {
             const buildExtraHeaders = (isJson) => {
                 const build = isJson ? buildJsonHead : buildTimedHead;
                 let result = ''; let idx = 0;
-                if (lyricist) { result += build("作词: ", lyricist, idx); idx++; }
-                if (composition) { result += build("作曲: ", composition, idx); idx++; }
-                if (lrcauthor || yrcauthor) { result += build("滚动歌词贡献者: ", isJson ? (yrcauthor || lrcauthor) : lrcauthor, idx); idx++; }
-                if (transauthor) { result += build("翻译歌词贡献者: ", transauthor, idx); idx++; }
+                if (showMeta && lyricist) { result += build("作词: ", lyricist, idx); idx++; }
+                if (showMeta && composition) { result += build("作曲: ", composition, idx); idx++; }
+                if (showContributors && (lrcauthor || yrcauthor)) { result += build("滚动歌词贡献者: ", isJson ? (yrcauthor || lrcauthor) : lrcauthor, idx); idx++; }
+                if (showContributors && transauthor) { result += build("翻译歌词贡献者: ", transauthor, idx); idx++; }
                 return result;
             };
 
             const useYrc = yrcStr && yrcStr.trim().length > 0;
-            const showMeta = window.app?.config?.showMeta !== false;
-            mainLrc = (showMeta ? buildExtraHeaders(false) : '') + mainLrc;
-            yrcStr = useYrc ? ((showMeta ? buildExtraHeaders(true) : '') + yrcStr) : '';
+            mainLrc = buildExtraHeaders(false) + mainLrc;
+            yrcStr = useYrc ? (buildExtraHeaders(true) + yrcStr) : '';
 
             return {
                 lrc: mainLrc,

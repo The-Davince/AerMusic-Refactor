@@ -524,7 +524,7 @@ const StyleCore = {
         const { lrc, tlyric, yrc, tList } = lyricData;
         const transClass = options.showTranslation ? 'show-trans' : '';
         const metaVal = (window.app && window.app.config && window.app.config.showMeta !== false) ? 'true' : 'false';
-        const contribVal = (window.app && window.app.config && window.app.config.showContributors === true) ? 'true' : 'false';
+        const contribVal = (window.app && window.app.config && window.app.config.showContributors !== false) ? 'true' : 'false';
         let lyricHtml = '';
         if (yrc) {
             const arc = JSON.parse(lyrictolyric({ content: yrc, lyricinput: 'packyrc', lyricoutput: 'arc' }));
