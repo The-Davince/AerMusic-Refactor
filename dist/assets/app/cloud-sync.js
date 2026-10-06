@@ -10,13 +10,17 @@
         history: 'AerMusic_History'
     };
     const SYNC_TS_KEY = 'AerMusic_Sync_Timestamps';
-    const state = { user: null, pushTimer: null, lastPushed: {}, restoring: false, failCount: 0 };
+    const state = { user: null, pushTimer: null, lastPushed: {}, restoring: false, failCount: 0, restoreVersion: 0 };
 
     function readTS() {
         try { return JSON.parse(localStorage.getItem(SYNC_TS_KEY) || '{}'); } catch (e) { return {}; }
     }
     function writeTS(ts) { localStorage.setItem(SYNC_TS_KEY, JSON.stringify(ts)); }
     function resetSyncState() {
+        clearTimeout(state.pushTimer);
+        state.pushTimer = null;
+        state.restoreVersion++;
+        state.restoring = false;
         state.lastPushed = {};
         writeTS({});
         state.failCount = 0;
@@ -47,24 +51,34 @@
         else console.log('[CloudSync]', msg);
     }
 
+    function resetRecommendProfile() {
+        if (window.CloudMusicPlatform && window.CloudMusicPlatform.resetRecommendProfile) {
+            window.CloudMusicPlatform.resetRecommendProfile();
+        }
+    }
+
     /* ---------- 拉取 ---------- */
     async function pullAndRestore() {
         if (!state.user) return;
+        const userId = state.user.userId;
+        const restoreVersion = state.restoreVersion;
         state.restoring = true;
         try {
             const resp = await api('GET', '/api/library');
+            if (!state.user || state.user.userId !== userId) return;
             const data = resp.data || {};
             const ts = readTS();
             let changed = false;
             Object.keys(KIND_KEYS).forEach((kind) => {
                 const remote = data[kind];
                 if (!remote) return;
-                if ((ts[kind] || 0) >= (remote.updatedAt || 0)) return;
-                if (remote.data === null || remote.data === undefined) {
+                if (remote.updatedAt === 0 || remote.data === null || remote.data === undefined) {
+                    if (remote.updatedAt !== 0 && (ts[kind] || 0) >= remote.updatedAt) return;
                     // 云端已清空: 移除本地键并记录时间戳, 保持多端一致
                     localStorage.removeItem(KIND_KEYS[kind]);
                     state.lastPushed[kind] = '';
                 } else {
+                    if ((ts[kind] || 0) >= (remote.updatedAt || 0)) return;
                     const raw = JSON.stringify(remote.data);
                     if (localStorage.getItem(KIND_KEYS[kind]) === raw) {
                         // 内容一致只推进时间戳, 避免多开设备互相触发刷新
@@ -86,7 +100,9 @@
         } catch (e) {
             console.warn('[CloudSync] 拉取失败:', e.message);
         } finally {
-            setTimeout(() => { state.restoring = false; }, 1000);
+            setTimeout(() => {
+                if (state.restoreVersion === restoreVersion && state.user && state.user.userId === userId) state.restoring = false;
+            }, 1000);
         }
     }
 
@@ -103,11 +119,13 @@
 
     async function pushAll(opts) {
         if (!state.user || state.restoring) return;
+        const userId = state.user.userId;
         const o = opts || {};
         const ts = readTS();
         const now = Date.now();
         let anyFail = false;
         for (const kind of Object.keys(KIND_KEYS)) {
+            if (!state.user || state.user.userId !== userId) return;
             const snap = snapshotKind(kind);
             if (snap === state.lastPushed[kind]) continue;
             try {
@@ -129,7 +147,13 @@
                 anyFail = true;
                 state.failCount++;
                 console.warn('[CloudSync] 推送 ' + kind + ' 失败:', e.message);
-                if (e.status === 401) { state.user = null; renderBox(); return; }
+                if (e.status === 401) {
+                    state.user = null;
+                    resetSyncState();
+                    resetRecommendProfile();
+                    renderBox();
+                    return;
+                }
                 if (state.failCount >= 5) { toast('云同步失败次数过多, 已暂停自动同步'); return; }
             }
         }
@@ -226,6 +250,7 @@
             const resp = await api('POST', url, { username: name, password: pass });
             state.user = resp.data;
             resetSyncState();
+            resetRecommendProfile();
             toast(url.indexOf('register') > -1 ? '注册成功, 已登录' : '登录成功');
             renderBox();
             await pullAndRestore();
@@ -238,6 +263,7 @@
         try { await api('POST', '/api/user/logout'); } catch (e) {}
         state.user = null;
         resetSyncState();
+        resetRecommendProfile();
         toast('已退出登录');
         renderBox();
     }

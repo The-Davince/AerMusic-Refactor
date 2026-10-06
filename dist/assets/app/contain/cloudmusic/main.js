@@ -59,6 +59,10 @@ const CloudMusicPlatform = {
         hotPlaylistCursor: 0,
         similarArtistIdx: 0,
         seedArtistId: null,
+        recommendProfile: null,
+        recommendProfileAt: 0,
+        recommendProfilePromise: null,
+        recommendProfileVersion: 0,
     },
 
     _shuffle(arr) {
@@ -70,11 +74,159 @@ const CloudMusicPlatform = {
         return a;
     },
 
+    _songId(song) {
+        const value = song && typeof song === 'object' ? (song.id ?? song.songId) : song;
+        return value === undefined || value === null || value === '' ? '' : String(value);
+    },
+
+    _songKey(song) {
+        const id = this._songId(song);
+        return id ? `${song?.platform || this.INFO.ID}:id:${id}` : '';
+    },
+
+    _extractList(data, key) {
+        const values = [
+            data?.[key],
+            data?.data?.[key],
+            data?.playlist?.[key],
+            data?.data?.playlist?.[key],
+        ];
+        return values.find(value => Array.isArray(value)) || [];
+    },
+
+    _artistIds(song) {
+        const artists = Array.isArray(song?.ar) ? song.ar : (Array.isArray(song?.artists) ? song.artists : []);
+        const keys = [];
+        artists.forEach(artist => {
+            const id = this._songId(artist);
+            const name = typeof artist === 'string' ? artist : artist?.name;
+            const platform = song?.platform || this.INFO.ID;
+            if (id) keys.push(`${platform}:id:${id}`);
+            if (typeof name === 'string' && name.trim()) keys.push(`${platform}:name:${name.trim().toLowerCase()}`);
+        });
+        return [...new Set(keys)];
+    },
+
+    _startRecommendProfile() {
+        const hb = this._heartbeat;
+        if (hb.recommendProfilePromise) return hb.recommendProfilePromise;
+        if (Date.now() - hb.recommendProfileAt < 300000) return Promise.resolve(hb.recommendProfile);
+        const version = hb.recommendProfileVersion;
+        hb.recommendProfilePromise = this._api('/api/recommend/profile').then(data => {
+            if (version !== hb.recommendProfileVersion) return;
+            const profile = data?.data && !Array.isArray(data.data) ? data.data : data;
+            hb.recommendProfile = profile && typeof profile === 'object' ? profile : {};
+            hb.recommendProfileAt = Date.now();
+        }).catch(() => {
+            if (version !== hb.recommendProfileVersion) return;
+            hb.recommendProfile = {};
+            hb.recommendProfileAt = Date.now() - 240000;
+        }).finally(() => {
+            if (version === hb.recommendProfileVersion) hb.recommendProfilePromise = null;
+        });
+        return hb.recommendProfilePromise;
+    },
+
+    resetRecommendProfile() {
+        const hb = this._heartbeat;
+        hb.recommendProfileVersion++;
+        hb.recommendProfile = null;
+        hb.recommendProfileAt = 0;
+        hb.recommendProfilePromise = null;
+    },
+
+    _recommendSignals() {
+        const profile = this._heartbeat.recommendProfile || {};
+        const app = window.app || {};
+        const ids = values => new Set((Array.isArray(values) ? values : []).flatMap(value => {
+            const id = this._songId(value);
+            const name = typeof value === 'string' ? value : value?.name;
+            const platform = typeof value === 'object' && value?.platform ? String(value.platform) : '';
+            return [platform && id ? `${platform}:id:${id}` : id, platform && typeof name === 'string' && name.trim() ? `${platform}:name:${name.trim().toLowerCase()}` : (typeof name === 'string' ? name.trim().toLowerCase() : '')].filter(Boolean);
+        }));
+        const recentIds = ids(profile.recentKeys || profile.recentIds);
+        const favoriteValues = Array.isArray(profile.favorites) ? profile.favorites : (profile.favorites?.keys || profile.favorites?.ids);
+        const favoriteIds = ids(favoriteValues);
+        const favoriteAlbums = ids(profile.albums);
+        const likedArtists = ids(profile.likedArtists);
+        const recentArtists = new Map();
+        if (!this._heartbeat.recommendProfilePromise) {
+            const localFavorites = Array.isArray(app.favoriteSongs) ? app.favoriteSongs : [];
+            localFavorites.forEach(item => {
+                const song = item?.rawSong && typeof item.rawSong === 'object' ? item.rawSong : item;
+                const songId = this._songId(item) || this._songId(song);
+                if (songId) favoriteIds.add(this._songKey(song) || songId);
+                this._artistIds(song).forEach(id => likedArtists.add(id));
+                const albumId = this._songId(song?.al?.id || song?.album?.id || song?.albumId);
+                if (albumId) favoriteAlbums.add(`${song?.platform || this.INFO.ID}:id:${albumId}`);
+            });
+        }
+        const recentSongs = Array.isArray(app.playlist) ? app.playlist.slice(Math.max(0, (app.currentIndex || 0) - 8), (app.currentIndex || 0) + 1) : [];
+        recentSongs.forEach(song => {
+            const songId = this._songId(song);
+            if (songId) recentIds.add(this._songKey(song) || songId);
+            this._artistIds(song).forEach(id => recentArtists.set(id, (recentArtists.get(id) || 0) + 1));
+        });
+        const playedIds = new Set(recentIds);
+        if (app.masterHistory) [...app.masterHistory].forEach(id => playedIds.add(this._songId(id)));
+        return { playedIds, favoriteIds, favoriteAlbums, likedArtists, recentArtists };
+    },
+
+    _pickDiverse(items, limit) {
+        const picked = [];
+        const deferred = [];
+        const artistCounts = new Map();
+        items.forEach(item => {
+            const artistId = item.artistIds?.[0] || '';
+            if (artistId && (artistCounts.get(artistId) || 0) >= 2) deferred.push(item);
+            else {
+                picked.push(item);
+                if (artistId) artistCounts.set(artistId, (artistCounts.get(artistId) || 0) + 1);
+            }
+        });
+        const result = picked.slice(0, limit);
+        deferred.forEach(item => {
+            if (result.length >= limit) return;
+            const artistId = item.artistIds?.[0] || '';
+            if (!artistId || (artistCounts.get(artistId) || 0) < 2) {
+                result.push(item);
+                if (artistId) artistCounts.set(artistId, (artistCounts.get(artistId) || 0) + 1);
+            }
+        });
+        if (result.length < limit) {
+            deferred.forEach(item => {
+                if (result.length < limit && !result.includes(item)) result.push(item);
+            });
+        }
+        return result.slice(0, limit);
+    },
+
+    _rankDailySongs(songs) {
+        const signals = this._recommendSignals();
+        const candidates = this._dedup(songs).map(song => {
+            const id = this._songId(song);
+            const artistIds = this._artistIds(song);
+            const albumId = this._songId(song?.al?.id || song?.album?.id || song?.albumId);
+            const recentCount = artistIds.reduce((max, artistId) => Math.max(max, signals.recentArtists.get(artistId) || 0), 0);
+            const popularity = Number(song.popularity ?? song.pop ?? 0);
+            let score = Math.min(0.1, Math.max(0, popularity) / 1000);
+            if (signals.favoriteIds.has(id) || signals.favoriteIds.has(this._songKey(song))) score += 1.2;
+            if (artistIds.some(artistId => signals.likedArtists.has(artistId))) score += 0.8;
+            if (albumId && signals.favoriteAlbums.has(albumId)) score += 0.55;
+            if (signals.playedIds.has(id) || signals.playedIds.has(this._songKey(song))) score -= 0.7;
+            score -= Math.min(0.36, recentCount * 0.12);
+            return { song, artistIds, score };
+        });
+        const ranked = this._shuffle(candidates).sort((a, b) => b.score - a.score);
+        return this._pickDiverse(ranked, ranked.length).map(item => item.song);
+    },
+
     _dedup(songs) {
         const seen = new Set();
         return songs.filter(s => {
-            if (seen.has(s.id)) return false;
-            seen.add(s.id);
+            const id = this._songId(s);
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
             return true;
         });
     },
@@ -113,7 +265,7 @@ const CloudMusicPlatform = {
             const res = await axios.get(this.INFO.API.detail, {
                 params: { ids: songId }
             });
-            return res.data.songs?.[0] || null;
+            return this._extractList(res.data, 'songs')[0] || null;
         } catch (e) {
             console.error('[CloudMusic] 获取详情失败:', e);
             return null;
@@ -231,15 +383,19 @@ const CloudMusicPlatform = {
     // ========== 推荐（优先读取后端预注入数据） ==========
 
     async getRecommend() {
+        const profilePromise = this._startRecommendProfile();
         const prefetched = window.__INITIAL_DATA__?.recommend;
         if (prefetched && prefetched.length > 0) {
             console.log('[CloudMusic] 使用后端预注入的推荐数据，歌曲数:', prefetched.length);
             window.__INITIAL_DATA__.recommend = null;
-            return prefetched.map(s => ({ ...s }));
+            if (profilePromise) await profilePromise;
+            return this._rankDailySongs(prefetched.map(s => ({ ...s })));
         }
         try {
             const res = await axios.get(this.INFO.API.recommend);
-            return res.data.data?.dailySongs || [];
+            const songs = res.data?.data?.dailySongs || res.data?.dailySongs || res.data?.data?.data?.dailySongs || [];
+            if (profilePromise) await profilePromise;
+            return this._rankDailySongs(songs);
         } catch (e) {
             console.error('[CloudMusic] 获取推荐失败:', e);
             return [];
@@ -252,36 +408,77 @@ const CloudMusicPlatform = {
         const detail = await this.getSongDetail(songId);
         const artistId = detail?.ar?.[0]?.id;
         this._heartbeat.seedArtistId = artistId;
+        const profilePromise = this._startRecommendProfile();
 
-        const results = await Promise.allSettled([
-            this._getSimilarSongs(songId),
-            this._getArtistTopSongs(artistId),
-            this._getRecommendedNewSongs(),
-            this._getSimilarArtistSongs(artistId),
-        ]);
-        
-        let pool = [];
-        results.forEach(r => { if (r.status === 'fulfilled' && Array.isArray(r.value)) pool.push(...r.value); });
-        pool = this._dedup(this._shuffle(pool));
-        this._loadHotPlaylistIds();
+        const sources = [
+            { id: 'similar', weight: 1, load: () => this._getSimilarSongs(songId) },
+            { id: 'artist', weight: 0.72, load: () => this._getArtistTopSongs(artistId) },
+            { id: 'new', weight: 0.42, load: () => this._getRecommendedNewSongs() },
+            { id: 'similarArtist', weight: 0.64, load: () => this._getSimilarArtistSongs(artistId) },
+        ];
+        const results = await Promise.allSettled(sources.map(source => source.load()));
+        if (profilePromise) await profilePromise;
+        const signals = this._recommendSignals();
+        const candidateMap = new Map();
+        results.forEach((result, index) => {
+            if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return;
+            const source = sources[index];
+            result.value.forEach(song => {
+                const id = this._songId(song);
+                const songKey = this._songKey(song);
+                if (!id || signals.playedIds.has(id) || signals.playedIds.has(songKey)) return;
+                const artistIds = this._artistIds(song);
+                const albumId = this._songId(song?.al?.id || song?.album?.id);
+                const candidate = candidateMap.get(id) || { song, id, artistIds, albumId, sources: new Set(), sourceWeight: 0 };
+                candidate.sources.add(source.id);
+                candidate.sourceWeight = Math.max(candidate.sourceWeight, source.weight);
+                candidateMap.set(id, candidate);
+            });
+        });
+        const candidates = [...candidateMap.values()].map(candidate => {
+            const recentCount = candidate.artistIds.reduce((max, id) => Math.max(max, signals.recentArtists.get(id) || 0), 0);
+            const liked = candidate.artistIds.some(id => signals.likedArtists.has(id));
+            const popularity = Number(candidate.song.popularity ?? candidate.song.pop ?? 0);
+            let score = candidate.sourceWeight + (candidate.sources.has('similar') ? 0.34 : 0);
+            if (candidate.artistIds.some(id => id === `${this.INFO.ID}:id:${artistId}`)) score += 0.18;
+            if (liked) score += 0.24;
+            if (signals.favoriteIds.has(candidate.id) || signals.favoriteIds.has(this._songKey(candidate.song))) score += 0.3;
+            if (candidate.albumId && (signals.favoriteAlbums.has(candidate.albumId) || signals.favoriteAlbums.has(`${this.INFO.ID}:id:${candidate.albumId}`))) score += 0.16;
+            score += Math.min(0.1, Math.max(0, popularity) / 1000);
+            score += Math.min(0.08, (candidate.sources.size - 1) * 0.04);
+            score -= Math.min(0.42, recentCount * 0.14);
+            return { ...candidate, score };
+        });
+        const ranked = this._shuffle(candidates).sort((a, b) => b.score - a.score);
+        const direct = this._pickDiverse(ranked.filter(item => item.sources.has('similar')), 19);
+        const explore = this._pickDiverse(ranked.filter(item => !item.sources.has('similar')), 5);
+        const selected = [];
+        let directIndex = 0;
+        let exploreIndex = 0;
+        while (selected.length < 24 && (directIndex < direct.length || exploreIndex < explore.length)) {
+            for (let i = 0; i < 2 && directIndex < direct.length && selected.length < 24; i++) selected.push(direct[directIndex++]);
+            if (exploreIndex < explore.length && selected.length < 24) selected.push(explore[exploreIndex++]);
+            if (directIndex >= direct.length) while (exploreIndex < explore.length && selected.length < 24) selected.push(explore[exploreIndex++]);
+        }
+        const pool = this._pickDiverse(selected, 24).map(item => item.song);
         return pool;
     },
 
     async _getSimilarSongs(songId) {
         const data = await this._api(this.INFO.API.similar, { id: songId });
-        return data?.data?.songs || [];
+        return this._extractList(data, 'songs');
     },
 
     async _getArtistTopSongs(artistId) {
         if (!artistId) return [];
         const data = await this._api(this.INFO.API.artistTopSong, { id: artistId });
-        return data?.songs || [];
+        return this._extractList(data, 'songs');
     },
 
     async _getSimilarArtistSongs(artistId) {
         if (!artistId) return [];
         const data = await this._api(this.INFO.API.simiArtist, { id: artistId });
-        const artists = data?.data?.artists || [];
+        const artists = this._extractList(data, 'artists');
         if (artists.length === 0) return [];
         const picked = this._shuffle(artists).slice(0, 2);
         const results = await Promise.allSettled(picked.map(a => this._getArtistTopSongs(a.id)));
@@ -292,7 +489,7 @@ const CloudMusicPlatform = {
 
     async _getRecommendedNewSongs() {
         const data = await this._api(this.INFO.API.personalizedNewSong, { limit: 30 });
-        return (data?.result || []).map(item => item.song || item);
+        return this._extractList(data, 'result').map(item => item.song || item);
     },
 
     async _loadHotPlaylistIds() {
@@ -302,8 +499,8 @@ const CloudMusicPlatform = {
                 this._api(this.INFO.API.personalized, { limit: 20 }),
             ]);
             const ids = [];
-            if (hot.status === 'fulfilled' && hot.value?.playlist?.playlists) ids.push(...hot.value.playlist.playlists.map(p => p.id));
-            if (rec.status === 'fulfilled' && rec.value?.result) ids.push(...rec.value.result.map(p => p.id));
+            if (hot.status === 'fulfilled') ids.push(...this._extractList(hot.value, 'playlists').map(p => p.id));
+            if (rec.status === 'fulfilled') ids.push(...this._extractList(rec.value, 'result').map(p => p.id));
             this._heartbeat.hotPlaylistIds = this._shuffle([...new Set(ids)]);
             this._heartbeat.hotPlaylistCursor = 0;
         } catch (e) {
@@ -320,7 +517,7 @@ const CloudMusicPlatform = {
             hb.hotPlaylistCursor++;
             if (pid) {
                 const data = await this._api(this.INFO.API.playlistTrackAll, { id: pid, limit: 30 });
-                if (data?.songs) songs.push(...data.songs);
+                songs.push(...this._extractList(data, 'songs'));
             }
         }
         return this._shuffle(songs);
