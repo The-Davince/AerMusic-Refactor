@@ -35,3 +35,9 @@ TRUSTED_PROXIES = [o.strip() for o in os.environ.get("TRUSTED_PROXIES", "127.0.0
 
 # 允许的跨域来源, 逗号分隔, 留空则同源
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
+# 封面代理白名单域名(取色用, 图片跨域无CORS头时前端取不到像素)
+COVER_ALLOW_HOSTS = [o.strip() for o in os.environ.get(
+    "COVER_ALLOW_HOSTS",
+    "p1.music.126.net,p2.music.126.net,p3.music.126.net,p4.music.126.net,p5.music.126.net,p6.music.126.net,y.music.126.net,127.0.0.1",
+).split(",") if o.strip()]
