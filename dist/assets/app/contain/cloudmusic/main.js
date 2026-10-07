@@ -133,6 +133,7 @@ const CloudMusicPlatform = {
         hb.recommendProfile = null;
         hb.recommendProfileAt = 0;
         hb.recommendProfilePromise = null;
+        hb.usedSeeds = null;
     },
 
     _recommendSignals() {
@@ -267,7 +268,119 @@ const CloudMusicPlatform = {
             return { song, artistIds, score };
         });
         const ranked = this._shuffle(candidates).sort((a, b) => b.score - a.score);
-        return this._pickDiverse(ranked, ranked.length).map(item => item.song);
+        return this._diversifyDaily(ranked).map(item => item.song);
+    },
+
+    _diversifyDaily(items) {
+        const queues = [];
+        const groupByArtist = new Map();
+        items.forEach(item => {
+            const artistId = item.artistIds?.[0] || '';
+            if (!artistId) {
+                queues.push([item]);
+                return;
+            }
+            let list = groupByArtist.get(artistId);
+            if (!list) {
+                list = [];
+                queues.push(list);
+                groupByArtist.set(artistId, list);
+            }
+            if (list.length < 2) list.push(item);
+        });
+        const result = [];
+        for (let round = 0; ; round++) {
+            let added = false;
+            for (const list of queues) {
+                if (round < list.length) {
+                    result.push(list[round]);
+                    added = true;
+                }
+            }
+            if (!added) break;
+        }
+        return result;
+    },
+
+    _pickSeedSongs(usedKeys, signals) {
+        const app = window.app || {};
+        this._heartbeat.usedSeeds = this._heartbeat.usedSeeds || new Set();
+        const usedSeeds = this._heartbeat.usedSeeds;
+        const seen = new Set();
+        const collect = (song) => {
+            const raw = song?.rawSong && typeof song.rawSong === 'object' ? song.rawSong : song;
+            const id = this._songId(raw);
+            if (!id) return null;
+            if (String(raw.platform || this.INFO.ID) !== this.INFO.ID) return null;
+            const key = this._songKey(raw);
+            if (usedKeys.has(id) || usedKeys.has(key) || usedSeeds.has(key) || seen.has(key)) return null;
+            if (signals.dislikedIds.has(id) || signals.dislikedIds.has(key)) return null;
+            seen.add(key);
+            return { ...raw, __aerSeed: true };
+        };
+        const favorites = this._shuffle((Array.isArray(app.favoriteSongs) ? app.favoriteSongs : []).map(collect).filter(Boolean));
+        const playlistSongs = [];
+        (Array.isArray(app.userPlaylists) ? app.userPlaylists : []).forEach(pl => {
+            if (pl && Array.isArray(pl.songs)) pl.songs.forEach(song => {
+                const item = collect(song);
+                if (item) playlistSongs.push(item);
+            });
+        });
+        this._shuffle(playlistSongs);
+        const seeds = [];
+        for (let i = 0; seeds.length < 4 && i < Math.max(favorites.length, playlistSongs.length); i++) {
+            if (favorites[i]) {
+                seeds.push(favorites[i]);
+                usedKeys.add(this._songId(favorites[i]));
+                usedKeys.add(this._songKey(favorites[i]));
+                usedSeeds.add(this._songKey(favorites[i]));
+            }
+            if (seeds.length < 4 && playlistSongs[i]) {
+                seeds.push(playlistSongs[i]);
+                usedKeys.add(this._songId(playlistSongs[i]));
+                usedKeys.add(this._songKey(playlistSongs[i]));
+                usedSeeds.add(this._songKey(playlistSongs[i]));
+            }
+        }
+        return seeds;
+    },
+
+    async _buildDailyQueue(songs) {
+        const daily = this._rankDailySongs(songs);
+        const signals = this._recommendSignals();
+        const usedKeys = new Set(daily.map(song => this._songKey(song) || this._songId(song)).filter(Boolean));
+        const seeds = this._pickSeedSongs(usedKeys, signals);
+        if (!seeds.length) return daily;
+        const similarResults = await Promise.allSettled(seeds.map(seed => this._getSimilarSongs(this._songId(seed))));
+        const similarMap = new Map();
+        seeds.forEach((seed, index) => {
+            const result = similarResults[index];
+            if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return;
+            const picks = [];
+            result.value.forEach(song => {
+                if (picks.length >= 2) return;
+                const id = this._songId(song);
+                const key = this._songKey(song);
+                if (!id || !key || usedKeys.has(id) || usedKeys.has(key)) return;
+                if (signals.playedIds.has(id) || signals.playedIds.has(key) || signals.dislikedIds.has(id) || signals.dislikedIds.has(key)) return;
+                usedKeys.add(id);
+                usedKeys.add(key);
+                picks.push(song);
+            });
+            if (picks.length) similarMap.set(this._songId(seed), picks);
+        });
+        const queue = [];
+        let dailyIndex = 0;
+        let seedIndex = 0;
+        while (dailyIndex < daily.length || seedIndex < seeds.length) {
+            for (let i = 0; i < 4 && dailyIndex < daily.length; i++) queue.push(daily[dailyIndex++]);
+            if (seedIndex < seeds.length) {
+                const seed = seeds[seedIndex++];
+                queue.push(seed);
+                (similarMap.get(this._songId(seed)) || []).forEach(song => queue.push(song));
+            }
+        }
+        return queue;
     },
 
     _dedup(songs) {
@@ -433,22 +546,24 @@ const CloudMusicPlatform = {
 
     async getRecommend() {
         const profilePromise = this._startRecommendProfile();
+        let songs = null;
         const prefetched = window.__INITIAL_DATA__?.recommend;
         if (prefetched && prefetched.length > 0) {
             console.log('[CloudMusic] 使用后端预注入的推荐数据，歌曲数:', prefetched.length);
             window.__INITIAL_DATA__.recommend = null;
-            if (profilePromise) await profilePromise;
-            return this._rankDailySongs(prefetched.map(s => ({ ...s })));
+            songs = prefetched.map(s => ({ ...s }));
         }
-        try {
-            const res = await axios.get(this.INFO.API.recommend);
-            const songs = res.data?.data?.dailySongs || res.data?.dailySongs || res.data?.data?.data?.dailySongs || [];
-            if (profilePromise) await profilePromise;
-            return this._rankDailySongs(songs);
-        } catch (e) {
-            console.error('[CloudMusic] 获取推荐失败:', e);
-            return [];
+        if (!songs) {
+            try {
+                const res = await axios.get(this.INFO.API.recommend);
+                songs = res.data?.data?.dailySongs || res.data?.dailySongs || res.data?.data?.data?.dailySongs || [];
+            } catch (e) {
+                console.error('[CloudMusic] 获取推荐失败:', e);
+                return [];
+            }
         }
+        if (profilePromise) await profilePromise;
+        return this._buildDailyQueue(songs);
     },
 
     // ========== 相似歌曲（多源混合） ==========
