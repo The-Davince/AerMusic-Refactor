@@ -39,9 +39,19 @@ TABLES = [
         duration REAL,
         createdat INTEGER NOT NULL
     )""",
+    """CREATE TABLE IF NOT EXISTS recommend_edges(
+        userid INTEGER NOT NULL,
+        platform TEXT NOT NULL,
+        srcid TEXT NOT NULL,
+        dstid TEXT NOT NULL,
+        weight REAL NOT NULL DEFAULT 0,
+        updatedat INTEGER NOT NULL,
+        PRIMARY KEY(userid, platform, srcid, dstid)
+    )""",
     """CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expiresat)""",
     """CREATE INDEX IF NOT EXISTS idx_recommend_events_user_time ON recommend_events(userid, createdat DESC, id DESC)""",
     """CREATE INDEX IF NOT EXISTS idx_recommend_events_user_event ON recommend_events(userid, event, createdat DESC)""",
+    """CREATE INDEX IF NOT EXISTS idx_recommend_edges_user_weight ON recommend_edges(userid, weight DESC, updatedat DESC)""",
 ]
 
 

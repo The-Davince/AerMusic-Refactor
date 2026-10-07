@@ -29,6 +29,16 @@
         eventState.version++;
         eventState.last = Object.create(null);
         eventState.failCount = 0;
+        clearTimeout(edgeState.timer);
+        edgeState.timer = null;
+        if (edgeState.controller) edgeState.controller.abort();
+        edgeState.controller = null;
+        edgeState.queue = [];
+        edgeState.sending = false;
+        edgeState.version++;
+        edgeState.last = Object.create(null);
+        edgeState.failCount = 0;
+        edgeState.local.clear();
         state.restoreVersion++;
         state.restoring = false;
         state.lastPushed = {};
@@ -158,6 +168,88 @@
 
     window.AerMusicRecommendEvents = { record: recordEvent, flush: flushEvents };
 
+    const edgeState = { queue: [], timer: null, sending: false, version: 0, controller: null, failCount: 0, local: new Map(), last: Object.create(null) };
+
+    function edgeSongId(song) {
+        if (!song || song.id === undefined || song.id === null || typeof song.id === 'boolean') return '';
+        return cleanText(song.id, 128);
+    }
+
+    function edgeSongKey(song) {
+        const id = edgeSongId(song);
+        if (!id) return '';
+        return (cleanText(song.platform || song.platformId, 40) || 'cloudmusic') + ':id:' + id;
+    }
+
+    function recordEdge(src, dst, seconds) {
+        if (!state.user) return;
+        const dstId = edgeSongId(dst);
+        if (!dstId) return;
+        const dstKey = edgeSongKey(dst);
+        if (!dstKey) return;
+        const srcKey = typeof src === 'string'
+            ? (src.startsWith('kw:') && cleanText(src.slice(3), 64) ? 'kw:' + cleanText(src.slice(3), 64) : '')
+            : edgeSongKey(src);
+        if (!srcKey) return;
+        const number = Number(seconds);
+        const weight = Number.isFinite(number) && number > 0 ? Math.min(600, Math.round(number * 1000) / 1000) : 0;
+        if (weight <= 0) return;
+        const now = Date.now();
+        const dedupeKey = srcKey + '>' + dstKey;
+        if (edgeState.last[dedupeKey] && now - edgeState.last[dedupeKey] < 30000) return;
+        edgeState.last[dedupeKey] = now;
+        const entry = edgeState.local.get(dstKey);
+        if (entry) entry.srcs.set(srcKey, Math.max(entry.srcs.get(srcKey) || 0, weight));
+        else {
+            edgeState.local.set(dstKey, { srcs: new Map([[srcKey, weight]]) });
+            if (edgeState.local.size > 200) edgeState.local.delete(edgeState.local.keys().next().value);
+        }
+        edgeState.queue.push({ src: srcKey, dst: dstId, platform: (cleanText(dst.platform || dst.platformId, 40) || 'cloudmusic'), seconds: weight });
+        if (edgeState.queue.length > 100) edgeState.queue.splice(0, edgeState.queue.length - 100);
+        if (edgeState.queue.length >= 20) flushEdges();
+        else {
+            clearTimeout(edgeState.timer);
+            edgeState.timer = setTimeout(() => flushEdges(), 2000);
+        }
+    }
+
+    async function flushEdges() {
+        if (!state.user || edgeState.sending || !edgeState.queue.length) return;
+        const userId = state.user.userId;
+        const version = edgeState.version;
+        const batch = edgeState.queue.splice(0, 50);
+        edgeState.sending = true;
+        const controller = new AbortController();
+        edgeState.controller = controller;
+        try {
+            await api('POST', '/api/recommend/edges', { edges: batch }, { keepalive: true, signal: controller.signal });
+            if (edgeState.version === version && state.user && state.user.userId === userId) edgeState.failCount = 0;
+        } catch (e) {
+            if (edgeState.version === version && state.user && state.user.userId === userId) {
+                edgeState.queue = batch.concat(edgeState.queue).slice(-100);
+                edgeState.failCount++;
+                if (edgeState.failCount < 5) {
+                    clearTimeout(edgeState.timer);
+                    edgeState.timer = setTimeout(() => flushEdges(), 5000);
+                }
+                if (e.status === 401) {
+                    state.user = null;
+                    resetSyncState();
+                    resetRecommendProfile();
+                    renderBox();
+                }
+            }
+        } finally {
+            if (edgeState.version === version) {
+                edgeState.sending = false;
+                edgeState.controller = null;
+            }
+        }
+        if (edgeState.version === version && state.user && state.user.userId === userId && edgeState.queue.length) flushEdges();
+    }
+
+    window.AerMusicRecommendEdges = { record: recordEdge, flush: flushEdges, local: edgeState.local };
+
     /* ---------- 拉取 ---------- */
     async function pullAndRestore() {
         if (!state.user) return;
@@ -273,6 +365,7 @@
             if (state.user) {
                 pushAll({ keepalive: true });
                 flushEvents({ keepalive: true });
+                flushEdges();
             }
         });
     }

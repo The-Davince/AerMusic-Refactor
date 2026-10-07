@@ -196,14 +196,37 @@ const CloudMusicPlatform = {
             });
         }
         const recentSongs = Array.isArray(app.playlist) ? app.playlist.slice(Math.max(0, (app.currentIndex || 0) - 8), (app.currentIndex || 0) + 1) : [];
+        const recentSrcIds = new Set();
         recentSongs.forEach(song => {
             const songId = this._songId(song);
-            if (songId) recentIds.add(this._songKey(song) || songId);
+            if (songId) {
+                recentIds.add(this._songKey(song) || songId);
+                recentSrcIds.add(this._songKey(song) || `${song?.platform || this.INFO.ID}:id:${songId}`);
+            }
             this._artistIds(song).forEach(id => recentArtists.set(id, (recentArtists.get(id) || 0) + 1));
         });
         const playedIds = new Set(recentIds);
         if (app.masterHistory) [...app.masterHistory].forEach(id => playedIds.add(this._songId(id)));
-        return { playedIds, favoriteIds, favoriteAlbums, likedArtists, recentArtists, behaviorSongs, behaviorArtists, behaviorAlbums, dislikedIds };
+        const edgeTargets = new Map();
+        const addEdge = (dstKey, src, weight) => {
+            if (!dstKey || !src || !(weight > 0)) return;
+            const list = edgeTargets.get(dstKey) || [];
+            const found = list.find(item => item.src === src);
+            if (found) found.weight = Math.max(found.weight, weight);
+            else list.push({ src, weight });
+            edgeTargets.set(dstKey, list);
+        };
+        (Array.isArray(profile.graph?.edges) ? profile.graph.edges : []).forEach(edge => {
+            if (!edge || edge.dst === undefined || edge.dst === null || edge.dst === '') return;
+            const platform = edge.platform || this.INFO.ID;
+            addEdge(`${platform}:id:${edge.dst}`, String(edge.src ?? ''), Number(edge.weight) || 0);
+        });
+        const localEdges = window.AerMusicRecommendEdges?.local;
+        if (localEdges instanceof Map) localEdges.forEach((entry, dstKey) => {
+            if (!entry || !(entry.srcs instanceof Map)) return;
+            entry.srcs.forEach((weight, src) => addEdge(dstKey, src, weight));
+        });
+        return { playedIds, favoriteIds, favoriteAlbums, likedArtists, recentArtists, behaviorSongs, behaviorArtists, behaviorAlbums, dislikedIds, recentSrcIds, edgeTargets };
     },
 
     _behaviorScore(scores, keys, limit) {
@@ -211,29 +234,48 @@ const CloudMusicPlatform = {
         keys.forEach(key => {
             if (key) raw = Math.max(raw, scores.get(key) || 0);
         });
-        const scaled = Math.sign(raw) * Math.log2(1 + Math.abs(raw));
+        const scaled = raw < 0 ? raw : Math.log2(1 + raw);
         return Math.max(-limit, Math.min(limit, scaled));
+    },
+
+    _edgeBoost(signals, keys, cap) {
+        let boost = 0;
+        keys.forEach(key => {
+            const edges = signals.edgeTargets.get(key);
+            if (!edges) return;
+            edges.forEach(edge => {
+                if (edge.src.startsWith('kw:') || signals.recentSrcIds.has(edge.src)) {
+                    boost = Math.max(boost, Math.min(cap, edge.weight / 240));
+                }
+            });
+        });
+        return boost;
     },
 
     _pickDiverse(items, limit) {
         const picked = [];
         const deferred = [];
         const artistCounts = new Map();
+        const albumCounts = new Map();
         items.forEach(item => {
             const artistId = item.artistIds?.[0] || '';
-            if (artistId && (artistCounts.get(artistId) || 0) >= 2) deferred.push(item);
+            const albumId = item.albumId || '';
+            if ((artistId && (artistCounts.get(artistId) || 0) >= 2) || (albumId && (albumCounts.get(albumId) || 0) >= 2)) deferred.push(item);
             else {
                 picked.push(item);
                 if (artistId) artistCounts.set(artistId, (artistCounts.get(artistId) || 0) + 1);
+                if (albumId) albumCounts.set(albumId, (albumCounts.get(albumId) || 0) + 1);
             }
         });
         const result = picked.slice(0, limit);
         deferred.forEach(item => {
             if (result.length >= limit) return;
             const artistId = item.artistIds?.[0] || '';
-            if (!artistId || (artistCounts.get(artistId) || 0) < 2) {
+            const albumId = item.albumId || '';
+            if ((!artistId || (artistCounts.get(artistId) || 0) < 2) && (!albumId || (albumCounts.get(albumId) || 0) < 2)) {
                 result.push(item);
                 if (artistId) artistCounts.set(artistId, (artistCounts.get(artistId) || 0) + 1);
+                if (albumId) albumCounts.set(albumId, (albumCounts.get(albumId) || 0) + 1);
             }
         });
         if (result.length < limit) {
@@ -248,7 +290,8 @@ const CloudMusicPlatform = {
         const signals = this._recommendSignals();
         const candidates = this._dedup(songs).filter(song => {
             const id = this._songId(song);
-            return !(signals.dislikedIds.has(id) || signals.dislikedIds.has(this._songKey(song)));
+            const key = this._songKey(song);
+            return !(signals.playedIds.has(id) || signals.playedIds.has(key) || signals.dislikedIds.has(id) || signals.dislikedIds.has(key));
         }).map(song => {
             const id = this._songId(song);
             const artistIds = this._artistIds(song);
@@ -260,45 +303,64 @@ const CloudMusicPlatform = {
             if (signals.favoriteIds.has(id) || signals.favoriteIds.has(this._songKey(song))) score += 1.2;
             if (artistIds.some(artistId => signals.likedArtists.has(artistId))) score += 0.8;
             if (albumId && (signals.favoriteAlbums.has(albumId) || signals.favoriteAlbums.has(albumKey))) score += 0.55;
-            if (signals.playedIds.has(id) || signals.playedIds.has(this._songKey(song))) score -= 0.7;
             score += this._behaviorScore(signals.behaviorSongs, [this._songKey(song)], 4) * 0.2;
             score += this._behaviorScore(signals.behaviorArtists, artistIds, 4) * 0.12;
             score += this._behaviorScore(signals.behaviorAlbums, [albumKey], 4) * 0.1;
+            score += this._edgeBoost(signals, [this._songKey(song), id], 0.5);
             score -= Math.min(0.36, recentCount * 0.12);
-            return { song, artistIds, score };
+            return { song, artistIds, albumId: albumKey, score };
         });
         const ranked = this._shuffle(candidates).sort((a, b) => b.score - a.score);
         return this._diversifyDaily(ranked).map(item => item.song);
     },
 
     _diversifyDaily(items) {
-        const queues = [];
-        const groupByArtist = new Map();
-        items.forEach(item => {
+        const result = [];
+        const deferred = [];
+        const artistCounts = new Map();
+        const albumCounts = new Map();
+        const bump = (item) => {
             const artistId = item.artistIds?.[0] || '';
-            if (!artistId) {
-                queues.push([item]);
+            const albumId = item.albumId || '';
+            if (artistId) artistCounts.set(artistId, (artistCounts.get(artistId) || 0) + 1);
+            if (albumId) albumCounts.set(albumId, (albumCounts.get(albumId) || 0) + 1);
+        };
+        const underCaps = (item) => {
+            const artistId = item.artistIds?.[0] || '';
+            const albumId = item.albumId || '';
+            return (!artistId || (artistCounts.get(artistId) || 0) < 2) && (!albumId || (albumCounts.get(albumId) || 0) < 2);
+        };
+        const farFrom = (item, index) => {
+            const artistId = item.artistIds?.[0] || '';
+            const albumId = item.albumId || '';
+            for (let i = Math.max(0, index - 1); i <= Math.min(result.length - 1, index); i++) {
+                const other = result[i];
+                if (artistId && other.artistIds?.[0] === artistId) return false;
+                if (albumId && other.albumId === albumId) return false;
+            }
+            return true;
+        };
+        const fits = (item, index) => underCaps(item) && farFrom(item, index);
+        items.forEach(item => {
+            if (fits(item, result.length)) {
+                result.push(item);
+                bump(item);
+            } else {
+                deferred.push(item);
+            }
+        });
+        deferred.forEach(item => {
+            for (let i = result.length; i >= 0; i--) {
+                if (!fits(item, i)) continue;
+                result.splice(i, 0, item);
+                bump(item);
                 return;
             }
-            let list = groupByArtist.get(artistId);
-            if (!list) {
-                list = [];
-                queues.push(list);
-                groupByArtist.set(artistId, list);
+            if (underCaps(item)) {
+                result.push(item);
+                bump(item);
             }
-            if (list.length < 2) list.push(item);
         });
-        const result = [];
-        for (let round = 0; ; round++) {
-            let added = false;
-            for (const list of queues) {
-                if (round < list.length) {
-                    result.push(list[round]);
-                    added = true;
-                }
-            }
-            if (!added) break;
-        }
         return result;
     },
 
@@ -356,6 +418,11 @@ const CloudMusicPlatform = {
         seeds.forEach((seed, index) => {
             const result = similarResults[index];
             if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return;
+            const seedArtistId = this._artistIds(seed)[0] || '';
+            const albumKeyOf = (song) => {
+                const albumId = this._songId(song?.al?.id || song?.album?.id || song?.albumId);
+                return albumId ? `${song?.platform || this.INFO.ID}:id:${albumId}` : '';
+            };
             const picks = [];
             result.value.forEach(song => {
                 if (picks.length >= 2) return;
@@ -363,6 +430,14 @@ const CloudMusicPlatform = {
                 const key = this._songKey(song);
                 if (!id || !key || usedKeys.has(id) || usedKeys.has(key)) return;
                 if (signals.playedIds.has(id) || signals.playedIds.has(key) || signals.dislikedIds.has(id) || signals.dislikedIds.has(key)) return;
+                const artistId = this._artistIds(song)[0] || '';
+                const albumKey = albumKeyOf(song);
+                if (artistId && artistId === seedArtistId) return;
+                if (picks.length) {
+                    const last = picks[picks.length - 1];
+                    if (artistId && artistId === (this._artistIds(last)[0] || '')) return;
+                    if (albumKey && albumKey === albumKeyOf(last)) return;
+                }
                 usedKeys.add(id);
                 usedKeys.add(key);
                 picks.push(song);
@@ -611,6 +686,7 @@ const CloudMusicPlatform = {
             score += this._behaviorScore(signals.behaviorSongs, [this._songKey(candidate.song)], 4) * 0.16;
             score += this._behaviorScore(signals.behaviorArtists, candidate.artistIds, 4) * 0.1;
             score += this._behaviorScore(signals.behaviorAlbums, [candidate.albumId ? `${candidate.song?.platform || this.INFO.ID}:id:${candidate.albumId}` : ''], 4) * 0.08;
+            score += this._edgeBoost(signals, [this._songKey(candidate.song), candidate.id], 0.3);
             score += Math.min(0.1, Math.max(0, popularity) / 1000);
             score += Math.min(0.08, (candidate.sources.size - 1) * 0.04);
             score -= Math.min(0.42, recentCount * 0.14);

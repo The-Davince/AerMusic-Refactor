@@ -33,6 +33,10 @@ EVENT_MAX_BATCH = 50
 EVENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 EVENT_MAX_PER_USER = 5000
 EVENT_RATE_LIMIT = 240
+EDGE_MAX_BODY = 32 * 1024
+EDGE_MAX_BATCH = 50
+EDGE_MAX_PER_USER = 2000
+EDGE_PROFILE_LIMIT = 300
 _event_rate_lock = threading.Lock()
 _event_rate = {}
 
@@ -272,6 +276,62 @@ def _load_events(userid):
     )
 
 
+def _parse_edge(item):
+    if not isinstance(item, dict):
+        return None
+    dst = _id(_first_value(item, "dstId", "dst", "to"))
+    if dst == "":
+        return None
+    src = _first_value(item, "srcId", "src", "from")
+    if isinstance(src, str) and src.startswith("kw:"):
+        keyword = _text(src[3:], 64)
+        src = "kw:" + keyword if keyword else ""
+    else:
+        src = _id(src)
+    if not src or src == "":
+        return None
+    platform = _text(_first_value(item, "platform", "source"), 40) or "unknown"
+    seconds = _number(_first_value(item, "seconds", "weight"), 600)
+    if seconds is None or seconds <= 0:
+        return None
+    return {
+        "platform": platform,
+        "srcid": str(src),
+        "dstid": str(dst),
+        "weight": round(seconds, 3),
+    }
+
+
+def _store_edges(userid, edges):
+    now_ms = int(time.time() * 1000)
+    rows = [
+        (userid, item["platform"], item["srcid"], item["dstid"], item["weight"], now_ms)
+        for item in edges
+    ]
+    db.run_many(
+        "INSERT INTO recommend_edges(userid,platform,srcid,dstid,weight,updatedat) VALUES(?,?,?,?,?,?) "
+        "ON CONFLICT(userid,platform,srcid,dstid) DO UPDATE SET "
+        "weight = MIN(recommend_edges.weight + excluded.weight, 3600), updatedat = excluded.updatedat", rows,
+    )
+    cutoff = now_ms - EVENT_RETENTION_MS
+    db.run("DELETE FROM recommend_edges WHERE userid = ? AND updatedat < ?", (userid, cutoff))
+    db.run(
+        "DELETE FROM recommend_edges WHERE userid = ? AND rowid NOT IN "
+        "(SELECT rowid FROM recommend_edges WHERE userid = ? ORDER BY updatedat DESC LIMIT ?)",
+        (userid, userid, EDGE_MAX_PER_USER),
+    )
+
+
+def _load_edges(userid):
+    cutoff = int(time.time() * 1000) - EVENT_RETENTION_MS
+    return db.query(
+        "SELECT platform,srcid,dstid,weight FROM recommend_edges "
+        "WHERE userid = ? AND updatedat >= ? "
+        "ORDER BY weight DESC, updatedat DESC LIMIT ?",
+        (userid, cutoff, EDGE_PROFILE_LIMIT),
+    )
+
+
 def _event_score(item):
     event = item.get("event")
     if event == "play_start":
@@ -334,6 +394,7 @@ def _feedback_profile(events, behavior_types):
 def _build_profile(userid):
     values = _load_rows(userid)
     events = _load_events(userid)
+    edges = _load_edges(userid)
     artists = {}
     albums = {}
     behavior_artists = {}
@@ -462,6 +523,17 @@ def _build_profile(userid):
             "dislikedIds": [key.split(":id:", 1)[1] for key in disliked_keys if ":id:" in key],
             "dislikedKeys": disliked_keys,
         },
+        "graph": {
+            "edges": [
+                {
+                    "platform": edge.get("platform") or "unknown",
+                    "src": edge.get("srcid") or "",
+                    "dst": edge.get("dstid") or "",
+                    "weight": round(float(edge.get("weight") or 0), 3),
+                }
+                for edge in edges
+            ],
+        },
         "feedback": {
             "completionRate": feedback["completionRate"],
             "skipRate": feedback["skipRate"],
@@ -506,3 +578,27 @@ async def postEvents(req: Request):
     except Exception:
         return _resp(req, 500, "事件保存失败", 500)
     return _resp(req, 0, "ok", data={"accepted": len(events), "rejected": rejected})
+
+
+@router.post("/recommend/edges")
+async def postEdges(req: Request):
+    user = currentUser(req)
+    if not user:
+        return _resp(req, 401, "未登录", 401)
+    body, err = await readJsonBody(req, EDGE_MAX_BODY)
+    if err:
+        return err
+    raw_edges = body.get("edges") if isinstance(body.get("edges"), list) else [body]
+    if not raw_edges or len(raw_edges) > EDGE_MAX_BATCH:
+        return _resp(req, 400, "边数量不合法", 400)
+    if not await asyncio.to_thread(_allow_event_rate, user["id"], len(raw_edges)):
+        return _resp(req, 429, "边提交过于频繁", 429)
+    edges = [parsed for item in raw_edges if (parsed := _parse_edge(item))]
+    rejected = len(raw_edges) - len(edges)
+    if not edges:
+        return _resp(req, 400, "没有合法边", 400, {"accepted": 0, "rejected": rejected})
+    try:
+        await asyncio.to_thread(_store_edges, user["id"], edges)
+    except Exception:
+        return _resp(req, 500, "边保存失败", 500)
+    return _resp(req, 0, "ok", data={"accepted": len(edges), "rejected": rejected})
