@@ -131,7 +131,7 @@
     }
 
     function recordEvent(event, song, extra) {
-        if (!state.user || !['play_start', 'play_progress', 'play_complete', 'play_skip', 'favorite_add', 'favorite_remove', 'playlist_add'].includes(event)) return;
+        if (!state.user || !['play_start', 'play_progress', 'play_complete', 'play_skip', 'favorite_add', 'favorite_remove', 'playlist_add', 'dislike', 'dislike_remove'].includes(event)) return;
         const base = eventSong(song);
         if (!base) return;
         const now = Date.now();

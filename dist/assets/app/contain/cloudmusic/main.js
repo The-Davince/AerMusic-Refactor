@@ -163,8 +163,25 @@ const CloudMusicPlatform = {
             const name = typeof item?.name === 'string' ? item.name.trim().toLowerCase() : '';
             return [[id ? `${platform}:id:${id}` : '', Number(item?.score) || 0], [name ? `${platform}:name:${name}` : '', Number(item?.score) || 0]].filter(value => value[0]);
         }));
-        const exploration = Number(profile.exploration?.ratio);
-        const explorationRatio = Number.isFinite(exploration) ? Math.max(0.08, Math.min(0.35, exploration)) : 0.2;
+        const dislikedIds = new Set();
+        (Array.isArray(behavior.dislikedKeys) ? behavior.dislikedKeys : []).forEach(key => {
+            if (!key) return;
+            dislikedIds.add(String(key));
+            const id = String(key).split(':id:')[1];
+            if (id) dislikedIds.add(id);
+        });
+        (Array.isArray(behavior.dislikedIds) ? behavior.dislikedIds : []).forEach(id => {
+            if (id !== undefined && id !== null && id !== '') dislikedIds.add(String(id));
+        });
+        try {
+            const localReduce = JSON.parse(localStorage.getItem('AerMusic_ReduceRecommend_Songs') || '[]');
+            if (Array.isArray(localReduce)) localReduce.forEach(key => {
+                if (!key) return;
+                dislikedIds.add(String(key));
+                const id = String(key).split(':id:')[1];
+                if (id) dislikedIds.add(id);
+            });
+        } catch (e) {}
         const recentArtists = new Map();
         if (!this._heartbeat.recommendProfilePromise) {
             const localFavorites = Array.isArray(app.favoriteSongs) ? app.favoriteSongs : [];
@@ -185,15 +202,16 @@ const CloudMusicPlatform = {
         });
         const playedIds = new Set(recentIds);
         if (app.masterHistory) [...app.masterHistory].forEach(id => playedIds.add(this._songId(id)));
-        return { playedIds, favoriteIds, favoriteAlbums, likedArtists, recentArtists, behaviorSongs, behaviorArtists, behaviorAlbums, explorationRatio };
+        return { playedIds, favoriteIds, favoriteAlbums, likedArtists, recentArtists, behaviorSongs, behaviorArtists, behaviorAlbums, dislikedIds };
     },
 
     _behaviorScore(scores, keys, limit) {
-        let score = 0;
+        let raw = 0;
         keys.forEach(key => {
-            if (key) score = Math.max(score, scores.get(key) || 0);
+            if (key) raw = Math.max(raw, scores.get(key) || 0);
         });
-        return Math.max(-limit, Math.min(limit, score));
+        const scaled = Math.sign(raw) * Math.log2(1 + Math.abs(raw));
+        return Math.max(-limit, Math.min(limit, scaled));
     },
 
     _pickDiverse(items, limit) {
@@ -227,7 +245,10 @@ const CloudMusicPlatform = {
 
     _rankDailySongs(songs) {
         const signals = this._recommendSignals();
-        const candidates = this._dedup(songs).map(song => {
+        const candidates = this._dedup(songs).filter(song => {
+            const id = this._songId(song);
+            return !(signals.dislikedIds.has(id) || signals.dislikedIds.has(this._songKey(song)));
+        }).map(song => {
             const id = this._songId(song);
             const artistIds = this._artistIds(song);
             const albumId = this._songId(song?.al?.id || song?.album?.id || song?.albumId);
@@ -447,8 +468,6 @@ const CloudMusicPlatform = {
         const results = await Promise.allSettled(sources.map(source => source.load()));
         if (profilePromise) await profilePromise;
         const signals = this._recommendSignals();
-        const exploreLimit = Math.max(2, Math.min(8, Math.round(24 * signals.explorationRatio)));
-        const explorationFactor = Math.max(0.65, Math.min(1.65, signals.explorationRatio / 0.2));
         const candidateMap = new Map();
         results.forEach((result, index) => {
             if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return;
@@ -456,13 +475,12 @@ const CloudMusicPlatform = {
             result.value.forEach(song => {
                 const id = this._songId(song);
                 const songKey = this._songKey(song);
-                if (!id || signals.playedIds.has(id) || signals.playedIds.has(songKey)) return;
+                if (!id || signals.playedIds.has(id) || signals.playedIds.has(songKey) || signals.dislikedIds.has(id) || signals.dislikedIds.has(songKey)) return;
                 const artistIds = this._artistIds(song);
                 const albumId = this._songId(song?.al?.id || song?.album?.id);
                 const candidate = candidateMap.get(id) || { song, id, artistIds, albumId, sources: new Set(), sourceWeight: 0 };
                 candidate.sources.add(source.id);
-                const sourceWeight = source.id === 'new' ? source.weight * explorationFactor : source.weight;
-                candidate.sourceWeight = Math.max(candidate.sourceWeight, sourceWeight);
+                candidate.sourceWeight = Math.max(candidate.sourceWeight, source.weight);
                 candidateMap.set(id, candidate);
             });
         });
@@ -484,8 +502,8 @@ const CloudMusicPlatform = {
             return { ...candidate, score };
         });
         const ranked = this._shuffle(candidates).sort((a, b) => b.score - a.score);
-        const direct = this._pickDiverse(ranked.filter(item => item.sources.has('similar')), 24 - exploreLimit);
-        const explore = this._pickDiverse(ranked.filter(item => !item.sources.has('similar')), exploreLimit);
+        const direct = this._pickDiverse(ranked.filter(item => item.sources.has('similar')), 19);
+        const explore = this._pickDiverse(ranked.filter(item => !item.sources.has('similar')), 5);
         const selected = [];
         let directIndex = 0;
         let exploreIndex = 0;

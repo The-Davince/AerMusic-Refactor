@@ -1401,6 +1401,11 @@ body.page-search-results #search-overlay .result-grid-container {
     fill: var(--apple-red) !important;
 }
 
+.secondary-controls .btn.reduce-btn.active svg {
+    color: var(--apple-red) !important;
+    fill: var(--apple-red) !important;
+}
+
 /**
 #initial-loader {
     z-index: 11000 !important;

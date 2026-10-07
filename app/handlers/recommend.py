@@ -25,7 +25,9 @@ MAX_ID = 128
 EVENT_TYPES = {
     "play_start", "play_progress", "play_complete", "play_skip",
     "favorite_add", "favorite_remove", "playlist_add",
+    "dislike", "dislike_remove",
 }
+LIBRARY_EVENT_TYPES = {"favorite_add", "favorite_remove", "playlist_add"}
 EVENT_MAX_BODY = 64 * 1024
 EVENT_MAX_BATCH = 50
 EVENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
@@ -278,7 +280,7 @@ def _event_score(item):
         duration = item.get("duration") or 0
         position = item.get("position") or 0
         ratio = min(1.0, position / duration) if duration > 0 else 0
-        return 0.3 + ratio * 0.5
+        return 0.01 + ratio * 0.02
     if event == "play_complete":
         return 2.5
     if event == "play_skip":
@@ -289,6 +291,10 @@ def _event_score(item):
         return -3.0
     if event == "playlist_add":
         return 2.0
+    if event == "dislike":
+        return -4.0
+    if event == "dislike_remove":
+        return 4.0
     return 0
 
 
@@ -395,15 +401,20 @@ def _build_profile(userid):
         add_song(song, 1, save_recent=True)
 
     now = int(time.time() * 1000)
+    disliked_state = {}
     for event in events:
         score = _event_score(event)
         if not score:
             continue
-        age = max(0, now - int(event.get("createdat") or now))
-        score *= math.pow(0.5, age / (30 * 24 * 60 * 60 * 1000))
         behavior_types[event["event"]] += 1
         platform = event.get("platform") or "unknown"
         song_key = f"{platform}:id:{event['songid']}"
+        if event["event"] in ("dislike", "dislike_remove") and song_key not in disliked_state:
+            disliked_state[song_key] = event["event"] == "dislike"
+        if event["event"] in LIBRARY_EVENT_TYPES:
+            continue
+        age = max(0, now - int(event.get("createdat") or now))
+        score *= math.pow(0.5, age / (30 * 24 * 60 * 60 * 1000))
         song = behavior_songs.get(song_key)
         if song is None:
             song = {
@@ -428,6 +439,7 @@ def _build_profile(userid):
     behavior_song_values = list(behavior_songs.values())
     behavior_song_values.sort(key=lambda item: (-item["score"], -item["count"], item["key"]))
     behavior_song_values = behavior_song_values[:100]
+    disliked_keys = sorted(key for key, disliked in disliked_state.items() if disliked)[:500]
 
     artist_signals = sort_signals(artists)
     feedback = _feedback_profile(events, behavior_types)
@@ -447,6 +459,8 @@ def _build_profile(userid):
             "artists": sort_signals(behavior_artists),
             "albums": sort_signals(behavior_albums),
             "songs": behavior_song_values,
+            "dislikedIds": [key.split(":id:", 1)[1] for key in disliked_keys if ":id:" in key],
+            "dislikedKeys": disliked_keys,
         },
         "feedback": {
             "completionRate": feedback["completionRate"],

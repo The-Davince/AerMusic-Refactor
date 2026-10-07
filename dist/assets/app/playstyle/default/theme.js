@@ -131,16 +131,25 @@ window.AerTheme = {
     getControlsHtml(song, index) {
         const app = this.getApp();
         const isFav = app && app.isFavoriteSong && app.isFavoriteSong(song.id);
+        const isDisliked = app && app.isDislikedSong && app.isDislikedSong(song);
         const songId = song ? song.id : '';
         return `
             <div class="secondary-controls">
                 <div class="btn" title="隐藏歌词" onclick="app.toggleLyrics && app.toggleLyrics()">${SVGcfg.dislike}</div>
                 <div class="btn" title="添加到歌单" onclick="app.addCurrentToPlaylist && app.addCurrentToPlaylist()">${SVGcfg.add}</div>
                 <div class="btn heart-btn ${isFav ? 'active' : ''}" data-song-id="${songId}" title="收藏" onclick="app.toggleFavoriteSong(${index})">${SVGcfg.heart}</div>
+                <div class="btn reduce-btn ${isDisliked ? 'active' : ''}" data-song-id="${songId}" title="减少推荐" onclick="app.toggleReduceRecommend(${index})">${SVGcfg.heartOff}</div>
                 <div class="btn" title="下载当前歌曲" onclick="app.downloadCurrent()">${SVGcfg.download}</div>
                 <div class="btn" title="分享" onclick="app.shareSong()">${SVGcfg.share}</div>
             </div>
         `;
+    },
+
+    updateReduceBtn(songId, isDisliked) {
+        document.querySelectorAll('.secondary-controls .reduce-btn').forEach(btn => {
+            if (songId !== undefined && songId !== null && String(btn.dataset.songId) !== String(songId)) return;
+            btn.classList.toggle('active', !!isDisliked);
+        });
     },
 
     /**
