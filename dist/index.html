@@ -307,19 +307,29 @@
         <div class="back-btn" id="playlist-back-btn" onclick="app.switchPage('recommend')">← 返回</div>
         
         <div id="playlists-list-view">
-            <div class="sub-page-header flex-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                <h1 class="sub-page-title" style="margin: 0;">我的歌单</h1>
-                <div style="display:flex; gap:10px; align-items:center;">
+            <div class="sub-page-header flex-header playlists-header">
+                <div>
+                    <h1 class="sub-page-title">我的歌单</h1>
+                    <p class="playlists-intro">把喜欢的音乐, 放进属于自己的歌单</p>
+                    <div id="playlists-summary" class="playlists-summary">0 个歌单 · 0 首歌曲</div>
+                </div>
+                <button class="apple-btn primary-btn playlists-create" onclick="app.createNewPlaylist()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                    新建歌单
+                </button>
+            </div>
+            <div class="playlists-toolbar">
+                <h2>全部歌单</h2>
+                <div class="playlists-tools">
+                    <button class="apple-btn secondary-btn" id="batch-pl-btn" onclick="app.toggleBatchPlaylistMode()">批量操作</button>
                     <div class="view-toggle-btns">
-                        <button class="view-toggle-btn active" data-view="grid" onclick="app.setPlaylistsView('grid')" title="网格视图">
+                        <button class="view-toggle-btn active" data-view="grid" onclick="app.setPlaylistsView('grid')" title="网格视图" aria-label="网格视图">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                         </button>
-                        <button class="view-toggle-btn" data-view="list" onclick="app.setPlaylistsView('list')" title="列表视图">
+                        <button class="view-toggle-btn" data-view="list" onclick="app.setPlaylistsView('list')" title="列表视图" aria-label="列表视图">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                         </button>
                     </div>
-                    <button class="apple-btn" id="batch-pl-btn" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.1);padding:0.8vh 2vh;font-size:1.3vh;border-radius:1vh;cursor:pointer;transition:all 0.2s;" onclick="app.toggleBatchPlaylistMode()">批量操作</button>
-                    <button class="apple-btn" style="background:linear-gradient(135deg,rgba(255,59,48,0.3),rgba(255,59,48,0.15));color:#ff6b6b;border:1px solid rgba(255,59,48,0.2);padding:0.8vh 2vh;font-size:1.3vh;border-radius:1vh;cursor:pointer;transition:all 0.2s;" onclick="app.createNewPlaylist()">+ 新建歌单</button>
                 </div>
             </div>
             <div class="result-grid-container">

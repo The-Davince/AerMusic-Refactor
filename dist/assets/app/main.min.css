@@ -42,7 +42,7 @@ body {
     top: 0; 
     width: 100%; 
     padding: 1.8519vh 4.6296vh;
-    z-index: 999;
+    z-index: 200001;
     display: flex; 
     align-items: center; 
     justify-content: space-between; 
@@ -660,7 +660,7 @@ body { background-color: var(--bg-color); color: #fff; overflow: hidden; height:
 
 #top-bar { 
     position: fixed; top: 0; width: 100%; 
-    padding: 1.8519vh 4.6296vh; z-index: 999;  
+    padding: 1.8519vh 4.6296vh; z-index: 200001;
     display: flex; align-items: center; justify-content: space-between; 
     pointer-events: none; 
 }
@@ -902,6 +902,8 @@ input[type="color"] { border: none; width: 4vh; height: 4vh; background: none; c
     overflow: hidden;
     pointer-events: auto;
 }
+
+#app-logo { position: relative; z-index: 200002; }
 
 body.sidebar-visible .sys-sidebar {
     transform: translateX(80px);
@@ -1598,6 +1600,62 @@ body.only-lyrics-enabled .only-lyrics-card:hover {
 .result-grid.list-view .result-item:hover .result-actions {
     opacity: 1;
 } **/
+
+/* 我的歌单布局 */
+.playlists-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 3.5vh;
+}
+.playlists-header .sub-page-title { margin: 0 0 0.8vh; }
+.playlists-intro { margin: 0; color: rgba(255,255,255,0.55); font-size: 1.55vh; }
+.playlists-summary { margin-top: 1.2vh; color: var(--apple-red); font-size: 1.35vh; font-weight: 600; }
+.playlists-create { min-height: 42px; padding: 11px 18px; white-space: nowrap; }
+.playlists-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 1.6vh; }
+.playlists-toolbar h2 { margin: 0; color: rgba(255,255,255,0.86); font-size: 1.9vh; font-weight: 700; }
+.playlists-tools { display: flex; align-items: center; gap: 10px; }
+.playlists-tools .apple-btn { padding: 7px 12px; font-size: 1.3vh; }
+#playlists-grid.grid-view { grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)) !important; gap: 18px !important; padding: 0 !important; }
+.playlist-card { position: relative; min-width: 0; padding: 12px !important; background: linear-gradient(145deg, rgba(255,255,255,0.095), rgba(255,255,255,0.025)) !important; border: 1px solid rgba(255,255,255,0.11); border-radius: 16px; overflow: hidden; transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease; }
+.playlist-card:hover { transform: translateY(-4px); border-color: rgba(36,200,250,0.42); background: linear-gradient(145deg, rgba(255,255,255,0.14), rgba(255,255,255,0.045)) !important; }
+.playlist-card-cover-wrap { position: relative; overflow: hidden; aspect-ratio: 1; border-radius: 11px; background: rgba(255,255,255,0.06); }
+.playlist-card-cover { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform 0.35s ease; }
+.playlist-card:hover .playlist-card-cover { transform: scale(1.04); }
+.playlist-card-name { margin-top: 12px; overflow: hidden; color: #fff; font-size: 1.65vh; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.playlist-card-description { margin-top: 5px; overflow: hidden; color: rgba(255,255,255,0.48); font-size: 1.25vh; text-overflow: ellipsis; white-space: nowrap; }
+.playlist-card-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; color: var(--apple-red); font-size: 1.2vh; font-weight: 600; }
+.playlist-card-meta time { overflow: hidden; color: rgba(255,255,255,0.34); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.batch-pl-checkbox { position: absolute; top: 18px; right: 18px; z-index: 1; display: none; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 4px; color: transparent; background: rgba(10,10,10,0.62); border: 1px solid rgba(255,255,255,0.5); border-radius: 50%; cursor: pointer; backdrop-filter: blur(8px); }
+.batch-pl-checkbox svg { width: 16px; height: 16px; }
+.batch-pl-checkbox.selected { color: #fff; background: var(--apple-red); border-color: var(--apple-red); }
+.playlist-card.batch-mode .batch-pl-checkbox { display: flex; }
+.playlists-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10vh 20px; color: rgba(255,255,255,0.48); text-align: center; }
+.playlists-empty-icon { display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 5px; color: var(--apple-red); background: rgba(36,200,250,0.1); border: 1px solid rgba(36,200,250,0.22); border-radius: 20px; font-size: 32px; }
+.playlists-empty strong { color: rgba(255,255,255,0.82); font-size: 1.8vh; }
+.playlists-empty span { font-size: 1.35vh; }
+.playlists-empty .apple-btn { margin-top: 8px; }
+#playlists-grid.list-view { display: flex !important; flex-direction: column; gap: 8px !important; padding: 0 !important; }
+#playlists-grid.list-view .playlist-card { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 14px; align-items: center; padding: 10px 14px !important; }
+#playlists-grid.list-view .playlist-card-cover-wrap { grid-row: 1 / 3; width: 64px; height: 64px; }
+#playlists-grid.list-view .playlist-card-name { margin-top: 0; }
+#playlists-grid.list-view .playlist-card-description { margin-top: 3px; }
+#playlists-grid.list-view .playlist-card-meta { grid-column: 3; grid-row: 1 / 3; display: flex; flex-direction: column; align-items: flex-end; margin-top: 0; }
+#playlists-grid.list-view .batch-pl-checkbox { top: 50%; right: 12px; transform: translateY(-50%); }
+#playlists-grid.list-view .playlist-card.batch-mode .playlist-card-meta { padding-right: 34px; }
+@media (max-width: 640px) {
+    .playlists-header { align-items: flex-start; flex-direction: column; gap: 16px; }
+    .playlists-create { align-self: stretch; }
+    .playlists-toolbar { align-items: flex-start; flex-direction: column; }
+    .playlists-tools { width: 100%; justify-content: space-between; }
+    #playlists-grid.grid-view { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+    .playlist-card { padding: 9px !important; border-radius: 13px; }
+    .playlist-card-name { font-size: 1.55vh; }
+    #playlists-grid.list-view .playlist-card { grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: auto auto auto; }
+    #playlists-grid.list-view .playlist-card-cover-wrap { width: 52px; height: 52px; grid-row: 1 / 4; }
+    #playlists-grid.list-view .playlist-card-meta { grid-column: 2; grid-row: 3; align-items: flex-start; flex-direction: row; margin-top: 6px; }
+}
 
 .bgbg.paused-anim {
     animation-play-state: paused !important;

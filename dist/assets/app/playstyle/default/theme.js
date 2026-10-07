@@ -640,13 +640,10 @@ window.AerTheme = {
                 opacity: 1;
                 transform: translateX(-50%) translateY(0);
             }
-            #playlists-grid,
-            #playlists-overlay .result-grid,
             #favorites-content.playlists-grid-view {
                 grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
                 gap: 20px !important;
             }
-            #playlists-grid .song-card,
             #favorites-content.playlists-grid-view .song-card {
                 max-width: 130px !important;
                 width: 100% !important;
@@ -657,7 +654,6 @@ window.AerTheme = {
                 border: 1px solid rgba(255, 255, 255, 0.05) !important;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
             }
-            #playlists-grid .song-card img,
             #favorites-content.playlists-grid-view .song-card img {
                 max-height: 114px !important;
                 max-width: 114px !important;
