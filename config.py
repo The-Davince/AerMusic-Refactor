@@ -24,7 +24,10 @@ UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "10"))
 UPSTREAM_RETRIES = int(os.environ.get("UPSTREAM_RETRIES", "2"))
 
 # 可选 Redis/Garnet, 用于多进程共享推荐事件限流, 不配置时使用进程内限流
-REDIS_URL = os.environ.get("REDIS_URL", "").strip()
+REDIS_ADDRESS = os.environ.get("REDIS_ADDRESS", "").strip()
+REDIS_USERNAME = os.environ.get("REDIS_USERNAME", "").strip()
+REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "").strip()
+REDIS_DB = int(os.environ.get("REDIS_DB", "0"))
 REDIS_TIMEOUT = max(0.05, float(os.environ.get("REDIS_TIMEOUT", "0.3")))
 REDIS_RETRY_SECONDS = max(1.0, float(os.environ.get("REDIS_RETRY_SECONDS", "30")))
 REDIS_RATE_PREFIX = os.environ.get("REDIS_RATE_PREFIX", "aermusic:recommend:rate:").strip() or "aermusic:recommend:rate:"

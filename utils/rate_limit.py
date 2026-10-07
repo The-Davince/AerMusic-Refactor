@@ -29,26 +29,44 @@ return 1
 """
 
 
-def _warn_once(kind, message):
+def _warn_once(kind, message, level="WARN"):
     if kind in _warned:
         return
     with _lock:
         if kind in _warned:
             return
         _warned.add(kind)
-    a(message, "WARN")
+    a(message, level)
 
 
 def _mark_failed(error):
     global _disabled_until
     with _lock:
         _disabled_until = time.monotonic() + cfg.REDIS_RETRY_SECONDS
-    _warn_once("connection", f"redis rate limit unavailable: {type(error).__name__}, fallback to process memory")
+    if isinstance(error, ValueError):
+        _warn_once("config", f"redis config invalid: {error}", "ERROR")
+    else:
+        _warn_once("connection", f"redis rate limit unavailable: {type(error).__name__}, fallback to process memory")
+
+
+def _parse_address(address):
+    if address.startswith("["):
+        host, _, rest = address[1:].partition("]")
+        port = int(rest.lstrip(":") or 6379)
+    else:
+        host, _, port_str = address.rpartition(":")
+        if host and ":" not in host and port_str.isdigit():
+            port = int(port_str)
+        else:
+            host, port = address, 6379
+    if not 0 < port <= 65535:
+        raise ValueError(f"REDIS_ADDRESS port out of range: {port}")
+    return host, port
 
 
 def _get_client():
     global _client
-    if not cfg.REDIS_URL or _redis is None:
+    if not cfg.REDIS_ADDRESS or _redis is None:
         return None
     if time.monotonic() < _disabled_until:
         return None
@@ -56,8 +74,13 @@ def _get_client():
         return _client
     with _lock:
         if _client is None:
-            _client = _redis.Redis.from_url(
-                cfg.REDIS_URL,
+            host, port = _parse_address(cfg.REDIS_ADDRESS)
+            _client = _redis.Redis(
+                host=host,
+                port=port,
+                username=cfg.REDIS_USERNAME or None,
+                password=cfg.REDIS_PASSWORD or None,
+                db=cfg.REDIS_DB,
                 socket_connect_timeout=cfg.REDIS_TIMEOUT,
                 socket_timeout=cfg.REDIS_TIMEOUT,
                 health_check_interval=30,
@@ -67,10 +90,10 @@ def _get_client():
 
 
 def allow_redis(key, amount, limit, window_seconds):
-    if not cfg.REDIS_URL:
+    if not cfg.REDIS_ADDRESS:
         return None
     if _redis is None:
-        _warn_once("dependency", "REDIS_URL is configured but redis package is unavailable, fallback to process memory")
+        _warn_once("dependency", "REDIS_ADDRESS is configured but redis package is unavailable, fallback to process memory")
         return None
     try:
         client = _get_client()
