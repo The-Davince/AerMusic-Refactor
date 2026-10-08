@@ -137,6 +137,24 @@ input[type="color"] {
     font-family: monospace;
 }
 
+.color-reset-btn {
+    align-self: center;
+    height: 2.8vh;
+    padding: 0 1.2vh;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 0.8vh;
+    cursor: pointer;
+    font-size: 1.2vh;
+    color: rgba(255, 255, 255, 0.55);
+    transition: all 0.3s ease;
+}
+
+.color-reset-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
 /* 样式预览卡片 */
 .style-preview-card {
     position: relative;

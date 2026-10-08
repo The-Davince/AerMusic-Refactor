@@ -232,17 +232,35 @@
                     </label>
                 </div>
                 <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
-                    <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">主歌词颜色</span>
-                    <div style="display:flex;gap:1vh;">
+                    <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">歌词已播颜色</span>
+                    <div style="display:flex;gap:1vh;align-items:center;">
                         <input type="color" id="set-lyric-color-picker" oninput="app.updateSetting('lyricColor', this.value)">
                         <input type="text" id="set-lyric-color-hex" class="hex-input" oninput="app.updateSetting('lyricColor', this.value)">
+                        <button type="button" class="color-reset-btn" onclick="app.updateSetting('lyricColor', '#ffffff')" title="恢复默认值">恢复</button>
+                    </div>
+                </div>
+                <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
+                    <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">歌词未播颜色</span>
+                    <div style="display:flex;gap:1vh;align-items:center;">
+                        <input type="color" id="set-lyric-idle-color-picker" oninput="app.updateSetting('lyricIdleColor', this.value)">
+                        <input type="text" id="set-lyric-idle-color-hex" class="hex-input" oninput="app.updateSetting('lyricIdleColor', this.value)">
+                        <button type="button" class="color-reset-btn" onclick="app.updateSetting('lyricIdleColor', '#afafaf')" title="恢复默认值">恢复</button>
                     </div>
                 </div>
                 <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
                     <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">翻译歌词颜色</span>
-                    <div style="display:flex;gap:1vh;">
+                    <div style="display:flex;gap:1vh;align-items:center;">
                         <input type="color" id="set-trans-lyric-color-picker" oninput="app.updateSetting('transLyricColor', this.value)">
                         <input type="text" id="set-trans-lyric-color-hex" class="hex-input" oninput="app.updateSetting('transLyricColor', this.value)">
+                        <button type="button" class="color-reset-btn" onclick="app.updateSetting('transLyricColor', '#afafaf')" title="恢复默认值">恢复</button>
+                    </div>
+                </div>
+                <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
+                    <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">翻译歌词未播颜色</span>
+                    <div style="display:flex;gap:1vh;align-items:center;">
+                        <input type="color" id="set-trans-idle-color-picker" oninput="app.updateSetting('transIdleColor', this.value)">
+                        <input type="text" id="set-trans-idle-color-hex" class="hex-input" oninput="app.updateSetting('transIdleColor', this.value)">
+                        <button type="button" class="color-reset-btn" onclick="app.updateSetting('transIdleColor', '#afafaf')" title="恢复默认值">恢复</button>
                     </div>
                 </div>
             </div>
