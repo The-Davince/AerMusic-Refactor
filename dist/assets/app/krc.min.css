@@ -8,7 +8,7 @@ body { background-color: rgba(0, 0, 0, 0); color: #666; text-align: center; disp
 .container ul li.active { color: #fff; /** transform: scale(1.15); **/ transform-origin: center; z-index: 10; }
 .container ul li.active-noanim { color: #fff; /** transform: scale(1.15); **/ transform-origin: center; transition: none; z-index: 10; }
 .karaoke-word { display: inline-block; position: relative; background-image: linear-gradient(90deg, #fff 0%, #afafaf 0%); background-clip: text; -webkit-background-clip: text; color: transparent; transition: background-image 0.05s linear; }
-.trans-line { display: none; font-size: 2.5vh; color: rgba(255,255,255,0.5); margin-top: 0.8vh; font-weight: normal; transform: scale(0.95); transform-origin: center; background: none; -webkit-background-clip: initial; }
+.trans-line { display: none; font-size: 2.5vh; color: var(--trans-color, rgba(255,255,255,0.5)); margin-top: 0.8vh; font-weight: normal; transform: scale(0.95); transform-origin: center; background: none; -webkit-background-clip: initial; }
 body.show-trans .trans-line { display: block; }
 .container::before { content: ""; position: absolute; top: 0; left: 10%; right: 0; bottom: 0; z-index: -1; -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0) 20%, rgba(0, 0, 0, 0) 80%, rgba(0, 0, 0, 1) 100%); }
 .container ul li:hover {background: rgba(255, 255, 255, 0.08);}

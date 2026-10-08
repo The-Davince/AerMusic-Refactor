@@ -27,7 +27,7 @@
                 position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
                 backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
                 display: flex; align-items: center; justify-content: center;
-                z-index: 200000; opacity: 0; transition: opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+                z-index: 200003; opacity: 0; transition: opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1);
             `;
             modal.innerHTML = `
                 <div style="background: rgba(28, 28, 30, 0.88); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 20px; box-shadow: 0 24px 64px rgba(0,0,0,0.55); width: ${width}; max-width: ${maxWidth}; padding: 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1); max-height: 80vh; overflow-y: auto;" id="apple-modal-panel">

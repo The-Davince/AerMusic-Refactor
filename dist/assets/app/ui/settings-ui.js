@@ -186,7 +186,7 @@
             if (gpuSwitch) {
                 gpuSwitch.checked = gpuEnabled;
             }
-            const transLyricColor = localStorage.getItem('AerMusic_TransLyricColor') || '#aaaaaa';
+            const transLyricColor = localStorage.getItem('AerMusic_TransLyricColor') || window.app?.config?.transLyricColor || '#ffffff';
             const transPicker = document.getElementById('set-trans-lyric-color-picker');
             const transHex = document.getElementById('set-trans-lyric-color-hex');
             if (transPicker) transPicker.value = transLyricColor;

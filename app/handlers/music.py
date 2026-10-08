@@ -16,7 +16,7 @@ router = APIRouter()
 _ROUTES = [
     "search", "song/detail", "song/url", "lyric",
     "artist/detail", "artists", "artist/album", "album",
-    "search/suggest", "simi/song", "simi/artist", "artist/top/song",
+    "search/suggest", "simi/song", "simi/artist", "simi/playlist", "artist/top/song",
     "recommend/songs", "personalized/newsong", "personalized",
     "top/playlist", "playlist/track/all",
 ]

@@ -22,6 +22,7 @@ ENDPOINTS = {
     "search/suggest":       {"up": lambda: cfg.NETEASE_API_BASE + "/search/suggest","ttl": 120,  "need": ("keywords",)},
     "simi/song":            {"up": lambda: cfg.NETEASE_API_BASE + "/simi/song",     "ttl": 300,  "need": ("id",)},
     "simi/artist":          {"up": lambda: cfg.NETEASE_API_BASE + "/simi/artist",   "ttl": 300,  "need": ("id",)},
+    "simi/playlist":        {"up": lambda: cfg.NETEASE_API_BASE + "/simi/playlist", "ttl": 300,  "need": ("id",)},
     "artist/top/song":      {"up": lambda: cfg.NETEASE_API_BASE + "/artist/top/song","ttl": 600, "need": ("id",)},
     "recommend/songs":      {"up": lambda: cfg.NETEASE_API_BASE + "/recommend/songs","ttl": 1800},
     "personalized/newsong": {"up": lambda: cfg.NETEASE_API_BASE + "/personalized/newsong","ttl": 1800, "limit": True},
