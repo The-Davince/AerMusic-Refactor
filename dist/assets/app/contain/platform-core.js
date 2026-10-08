@@ -86,12 +86,14 @@ const PlatformCore = {
     },
 
     _readSaved() {
+        const raw = localStorage.getItem('AerMusic_ActivePlatforms');
+        if (raw === null) return null;
         try {
-            const saved = JSON.parse(localStorage.getItem('AerMusic_ActivePlatforms'));
-            return Array.isArray(saved) ? saved : [];
+            const saved = JSON.parse(raw);
+            return Array.isArray(saved) ? saved : null;
         } catch (e) {
             localStorage.removeItem('AerMusic_ActivePlatforms');
-            return [];
+            return null;
         }
     },
 
