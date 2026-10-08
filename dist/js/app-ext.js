@@ -91,8 +91,10 @@
                     };
                     if (window.StyleCore) {
                         window.StyleCore.addCustomStyle(config);
-                        window.StyleCore.renderSavedStyles();
-                        window.StyleCore.renderStyleList();
+                        if (window.AerSettingsUI) {
+                            window.AerSettingsUI.renderSavedStyles();
+                            window.AerSettingsUI.renderStyleList();
+                        }
                         app.showToast('样式已保存');
                     }
                 }, null, { confirmText: '保存样式', maxWidth: '450px' });

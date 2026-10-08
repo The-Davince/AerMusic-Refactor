@@ -25,6 +25,8 @@ const CloudMusicPlatform = {
             lyric: true,
             recommend: true,
             similar: true,
+            album: true,
+            suggest: true,
             playlist: true,
             download: true,
             heartbeat: true

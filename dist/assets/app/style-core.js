@@ -37,15 +37,6 @@
     };
 })();
 
-const styleEsc = (value) => {
-    if (window.app && typeof window.app.escapeHtml === 'function') return window.app.escapeHtml(value);
-    return String(value ?? '').replace(/[&<>\"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]));
-};
-const styleUrl = (value) => {
-    const url = String(value ?? '').trim();
-    return /^https?:\/\//i.test(url) ? url : '';
-};
-
 const StyleCore = {
     // 已注册的样式
     styles: {},
@@ -138,32 +129,16 @@ const StyleCore = {
         // 尝试加载内置样式目录
         for (const styleInfo of this.builtInStyles) {
             try {
-                // 动态加载 theme.js
-                const themeUrl = window.staticRef(`assets/app/playstyle/${styleInfo.path}/theme.js`);
+                // 已注册过(比如 init 时 load 已加载)就跳过, 避免重复注入脚本
+                if (this.styles[styleInfo.id]) {
+                    discoveredStyles.push(styleInfo.id);
+                    continue;
+                }
                 
-                // 检查文件是否存在
-                const checkRes = await fetch(themeUrl, { method: 'HEAD' });
-                if (!checkRes.ok) continue;
+                await this._loadThemeScript(styleInfo);
                 
-                // 先清除旧的 AerTheme
-                window.AerTheme = null;
-                
-                // 加载 JS
-                await new Promise((resolve, reject) => {
-                    const script = document.createElement('script');
-                    script.src = `${themeUrl}`;
-                    script.onload = resolve;
-                    script.onerror = reject;
-                    document.head.appendChild(script);
-                });
-                
-                // 注册到 StyleCore
-                if (window.AerTheme && window.AerTheme.STYLE_INFO) {
-                    // 使用路径作为 ID，或者使用 STYLE_INFO.ID
-                    const styleId = styleInfo.id;
-                    window.AerTheme.STYLE_INFO.ID = styleId;
-                    this.register(window.AerTheme);
-                    discoveredStyles.push(styleId);
+                if (this.styles[styleInfo.id]) {
+                    discoveredStyles.push(styleInfo.id);
                 }
             } catch (e) {
                 console.warn(`[StyleCore] 加载内置样式 ${styleInfo.path} 失败:`, e);
@@ -173,6 +148,24 @@ const StyleCore = {
         console.log(`[StyleCore] 发现 ${discoveredStyles.length} 个内置样式:`, discoveredStyles);
         return discoveredStyles;
     },
+
+    // 动态注入主题脚本并注册
+    async _loadThemeScript(styleInfo) {
+        const themeUrl = window.staticRef(`assets/app/playstyle/${styleInfo.path}/theme.js`);
+        
+        await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = themeUrl;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+        
+        if (window.AerTheme && window.AerTheme.STYLE_INFO) {
+            window.AerTheme.STYLE_INFO.ID = styleInfo.id;
+            this.register(window.AerTheme);
+        }
+    },
     
     /**
      * 加载样式（内置或自定义）
@@ -180,35 +173,42 @@ const StyleCore = {
      * @param {Object} options - 加载选项
      */
     async load(styleId, options = {}) {
+        // 只允许安全字符, 防止 localStorage 被污染后拼出路径穿越
+        if (!/^[A-Za-z0-9_-]{1,40}$/.test(String(styleId))) styleId = 'default';
         console.log('[StyleCore] 加载样式:', styleId);
         
         // 检查是否为自定义样式
         const customStyle = this.customStyles.find(s => s.id === styleId);
-        
         if (customStyle) {
             return await this.loadCustomStyle(customStyle);
         }
         
-        // 内置样式
+        const styleInfo = this.builtInStyles.find(s => s.id === styleId);
+        if (!this.styles[styleId]) {
+            try {
+                if (styleInfo) {
+                    await this._loadThemeScript(styleInfo);
+                } else {
+                    await this.loadFromFile(styleId);
+                }
+            } catch (e) {
+                console.error(`[StyleCore] 加载样式 ${styleId} 的脚本失败:`, e);
+            }
+        }
+        
         const style = this.styles[styleId];
         if (!style) {
-            // 尝试从文件加载（使用路径）
-            const styleInfo = this.builtInStyles.find(s => s.id === styleId);
-            if (styleInfo) {
-                return await this.loadFromFile(styleInfo.path);
-            }
-            return await this.loadFromFile(styleId);
+            console.error(`[StyleCore] 样式 ${styleId} 未注册成功, 无法加载`);
+            return false;
         }
         
         this.currentStyle = style;
         
         // 加载对应的 CSS
-        const styleInfo = this.builtInStyles.find(s => s.id === styleId);
-        if (styleInfo) {
-            const link = document.getElementById('playstyle-link');
-            if (link) {
-                link.href = window.staticRef(`assets/app/playstyle/${styleInfo.path}/style.css`);
-            }
+        const path = styleInfo ? styleInfo.path : styleId;
+        const link = document.getElementById('playstyle-link');
+        if (link) {
+            link.href = window.staticRef(`assets/app/playstyle/${path}/style.css`);
         }
         
         // 加载外部资源
@@ -216,13 +216,18 @@ const StyleCore = {
             await this.loadExternalFiles(style.STYLE_INFO.FILE);
         }
         
-        // 通知样式已加载
-        if (style.onLoad) {
-            style.onLoad();
-        }
+        this._fireOnLoad(style);
         
         console.log('[StyleCore] 样式加载完成:', style.STYLE_INFO.NAME);
         return true;
+    },
+
+    // onLoad 只触发一次, 多条加载通道(app.init / initSettings)不会重复绑定
+    _fireOnLoad(style) {
+        if (style.onLoad && !style._loaded) {
+            style._loaded = true;
+            style.onLoad();
+        }
     },
     
     /**
@@ -240,6 +245,11 @@ const StyleCore = {
                 script.onerror = reject;
                 document.head.appendChild(script);
             });
+            
+            if (window.AerTheme && window.AerTheme.STYLE_INFO) {
+                window.AerTheme.STYLE_INFO.ID = styleId;
+                this.register(window.AerTheme);
+            }
             
             // 加载 CSS（如果有）
             const link = document.getElementById('playstyle-link');
@@ -316,7 +326,7 @@ const StyleCore = {
             const style = this._lastRegisteredStyle || this.styles[Object.keys(this.styles).pop()];
             if (style) {
                 this.currentStyle = style;
-                if (style.onLoad) style.onLoad();
+                this._fireOnLoad(style);
             }
             
             return true;
@@ -351,19 +361,7 @@ const StyleCore = {
     getFile(key) {
         return this.fileCache[key] || null;
     },
-    
-    /**
-     * 读取本地文件
-     */
-    readLocalFile(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsText(file);
-        });
-    },
-    
+
     /**
      * 注入CSS到页面
      */
@@ -372,52 +370,6 @@ const StyleCore = {
         style.textContent = cssContent;
         document.head.appendChild(style);
     },
-    
-    /**
-     * 渲染播放页面
-     * @param {Object} song - 歌曲数据
-     * @param {number} index - 歌曲索引
-     * @param {HTMLElement} container - 容器元素
-     */
-    renderPage(song, index, container) {
-        if (!this.currentStyle) {
-            console.error('[StyleCore] 未加载样式');
-            return;
-        }
-        
-        // 调用样式的渲染方法
-        const pageHtml = this.currentStyle.renderPage(song, index);
-        
-        if (typeof pageHtml === 'string') {
-            container.innerHTML = pageHtml;
-        } else if (pageHtml instanceof HTMLElement) {
-            container.appendChild(pageHtml);
-        }
-        
-        // 样式渲染完成回调
-        if (this.currentStyle.onRendered) {
-            this.currentStyle.onRendered(song, index, container);
-        }
-    },
-    
-    /**
-     * 更新播放进度
-     */
-    updateProgress(currentTime, duration, index) {
-        if (this.currentStyle?.updateProgress) {
-            this.currentStyle.updateProgress(currentTime, duration, index);
-        }
-    },
-    
-    /**
-     * 更新播放状态
-     */
-    updateStatus(isPlaying, loopMode, index) {
-        if (this.currentStyle?.updateStatus) {
-            this.currentStyle.updateStatus(isPlaying, loopMode, index);
-        }
-    },
-    
     /**
      * 获取样式列表（内置 + 自定义）
      */
@@ -507,40 +459,6 @@ const StyleCore = {
             }
         }
     },
-    
-    /**
-     * 生成歌词 HTML
-     * @param {Object} lyricData - 歌词数据
-     * @param {Object} options - 渲染选项
-     */
-    renderLyric(lyricData, options = {}) {
-        if (!this.currentStyle?.renderLyric) {
-            // 使用默认歌词渲染
-            return this.defaultLyricRender(lyricData, options);
-        }
-        
-        return this.currentStyle.renderLyric(lyricData, options);
-    },
-    
-    /**
-     * 默认歌词渲染
-     */
-    defaultLyricRender(lyricData, options) {
-        const { lrc, tlyric, yrc, tList } = lyricData;
-        const transClass = options.showTranslation ? 'show-trans' : '';
-        const metaVal = (window.app && window.app.config && window.app.config.showMeta !== false) ? 'true' : 'false';
-        const contribVal = (window.app && window.app.config && window.app.config.showContributors !== false) ? 'true' : 'false';
-        let lyricHtml = '';
-        if (yrc) {
-            const arc = JSON.parse(lyrictolyric({ content: yrc, lyricinput: 'packyrc', lyricoutput: 'arc' }));
-            lyricHtml = safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(KRC_TEMPLATE, '{{KRC_JSON}}', escapeScriptJson(JSON.stringify(arc))), '{{TLYRIC_JSON}}', escapeScriptJson(JSON.stringify(tList || []))), '{{TRANS_CLASS}}', transClass), '{{SHOW_META}}', metaVal), '{{SHOW_CONTRIBUTORS}}', contribVal);
-        } else {
-            const content = lrc || '[00:00.000] 暂无歌词';
-            const arc = JSON.parse(lyrictolyric({ content, lyricinput: 'packlrc', lyricoutput: 'arc' }));
-            lyricHtml = safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(safeTemplateReplace(LRC_TEMPLATE, '{{LYRIC_CONTENT}}', escapeScriptEmbed(arc.lyric)), '{{TLYRIC_JSON}}', escapeScriptJson(JSON.stringify(tList || []))), '{{TRANS_CLASS}}', transClass), '{{SHOW_META}}', metaVal), '{{SHOW_CONTRIBUTORS}}', contribVal);
-        }
-        return lyricHtml;
-    },
 };
 
 // 全局访问外部资源的辅助对象
@@ -548,138 +466,12 @@ window.asfile = {
     get: (key) => StyleCore.getFile(key)
 };
 
-// 设置渲染辅助函数
-StyleCore.renderStyleList = function() {
-    const grid = document.getElementById('style-grid');
-    if (!grid) {
-        console.warn('[StyleCore] style-grid 容器不存在');
-        return;
+// 设置面板渲染已迁至 core 壳层 (ui/settings-ui.js), 这里只保留委托入口
+StyleCore.initSettings = async function() {
+    if (window.AerSettingsUI) {
+        return window.AerSettingsUI.initSettings();
     }
-    
-    const currentId = localStorage.getItem('AerMusic_CurrentStyle') || 'default';
-    const styles = this.getStyleList();
-    
-    console.log('[StyleCore] 渲染样式列表，当前样式:', currentId, '可用样式:', styles.length);
-    
-    // 如果没有注册的样式，显示默认提示
-    if (styles.length === 0) {
-        grid.innerHTML = `
-            <div style="color:rgba(255,255,255,0.5);font-size:1.4vh;padding:2vh;text-align:center;">
-                正在加载样式...
-            </div>
-        `;
-        // 延迟重新渲染(限时, 样式系统加载失败就停在提示, 不无限轮询)
-        this._renderRetryCount = (this._renderRetryCount || 0) + 1;
-        if (this._renderRetryCount <= 20) setTimeout(() => this.renderStyleList(), 500);
-        return;
-    }
-    
-    grid.innerHTML = styles.map(style => {
-        const isActive = style.id === currentId;
-        const bgStyle = style.bg
-            ? (style.bg.startsWith('#') || style.bg.startsWith('rgb') || style.bg.startsWith('linear')
-                ? `background:${style.bg};`
-                : `background-image:url(${style.bg});background-size:cover;`)
-            : 'background:#333;';
-        
-        const author = style.author || '';
-        const authorUrl = style.authorUrl || '';
-        const safeAuthorUrl = styleUrl(authorUrl);
-        const authorHtml = author ? `<div style="font-size:1.1vh;color:rgba(255,255,255,0.4);margin-top:0.3vh;${safeAuthorUrl ? 'cursor:pointer;text-decoration:underline;' : ''}" ${safeAuthorUrl ? `data-author-url="${styleEsc(safeAuthorUrl)}"` : ''}>${styleEsc(author)}</div>` : '';
-        
-        // 获取样式的图标/首字母
-        const iconContent = style.icon || style.name.charAt(0);
-        const iconColor = style.color || style.bg || '#24c8fa';
-        
-        return `
-            <div class="platform-setting-item" data-style-action="select" data-style-id="${styleEsc(style.id)}" style="cursor:pointer;${isActive ? 'border:1px solid var(--apple-red,#24c8fa);' : ''}">
-                <div class="platform-icon" style="${styleEsc(bgStyle)}width:4vh;height:4vh;border-radius:1vh;display:flex;align-items:center;justify-content:center;">
-                    <span style="color:#fff;font-size:1.8vh;font-weight:700;">${styleEsc(iconContent)}</span>
-                </div>
-                <div class="platform-details">
-                    <div class="platform-name">${styleEsc(style.name)} ${isActive ? '✓' : ''}</div>
-                    <div class="platform-desc">${styleEsc(style.description || '')}</div>
-                </div>
-                ${style.custom ? '<div style="font-size:1vh;background:rgba(255,255,255,0.15);padding:0.2vh 0.6vh;border-radius:0.5vh;color:#fff;">自定义</div>' : ''}
-            </div>
-        `;
-    }).join('') + `
-        <div class="platform-setting-item" data-style-action="custom" style="cursor:pointer;border:1px dashed rgba(255,255,255,0.15);">
-            <div class="platform-icon" style="width:4vh;height:4vh;border-radius:1vh;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.05);">
-                <svg width="2vh" height="2vh" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            </div>
-            <div class="platform-details">
-                <div class="platform-name" style="color:rgba(255,255,255,0.5);">添加自定义样式</div>
-                <div class="platform-desc">点击添加你的自定义播放样式</div>
-            </div>
-        </div>
-    `;
-
-    grid.querySelectorAll('[data-style-action="select"]').forEach(card => {
-        card.addEventListener('click', () => this.selectStyle(card.dataset.styleId));
-    });
-    grid.querySelectorAll('[data-author-url]').forEach(el => {
-        el.addEventListener('click', e => {
-            e.stopPropagation();
-            window.open(el.dataset.authorUrl, '_blank', 'noopener,noreferrer');
-        });
-    });
-    const customCard = grid.querySelector('[data-style-action="custom"]');
-    if (customCard) customCard.addEventListener('click', () => window.app?.showCustomStyleForm?.());
-    console.log('[StyleCore] 样式列表渲染完成');
-};
-
-StyleCore.renderPlatformList = function() {
-    const container = document.getElementById('platform-settings');
-    if (!container || !window.PlatformCore) return;
-    
-    const platforms = window.PlatformCore.getAvailablePlatforms();
-    
-    if (platforms.length === 0) {
-        container.innerHTML = '<div style="color:rgba(255,255,255,0.5);font-size:1.4vh;">暂无已注册的音源平台</div>';
-        return;
-    }
-    
-    container.innerHTML = platforms.map(platform => {
-        const author = platform.author || '';
-        const authorUrl = platform.authorUrl || '';
-        const safeAuthorUrl = styleUrl(authorUrl);
-        const authorHtml = author ? `<div style="font-size:1.1vh;color:rgba(255,255,255,0.4);margin-top:0.3vh;${safeAuthorUrl ? 'cursor:pointer;text-decoration:underline;' : ''}" ${safeAuthorUrl ? `data-author-url="${styleEsc(safeAuthorUrl)}"` : ''}>${styleEsc(author)}</div>` : '';
-        const iconHtml = platform.icon && platform.icon.includes('<svg') ? platform.icon : `<span style="color:#fff;font-size:1.6vh;">${styleEsc(platform.icon || platform.name.charAt(0))}</span>`;
-
-        return `
-            <div class="platform-setting-item" style="position:relative;">
-                <div class="platform-icon" style="background:${styleEsc(platform.color || '#666')};width:4vh;height:4vh;border-radius:1vh;display:flex;align-items:center;justify-content:center;color:#fff;">
-                    ${iconHtml}
-                </div>
-                <div class="platform-details">
-                    <div class="platform-name">${styleEsc(platform.name)}</div>
-                    <div class="platform-desc">${styleEsc(platform.description || '')}</div>
-                    ${authorHtml}
-                </div>
-            </div>
-        `;
-    }).join('');
-    
-    container.innerHTML += `
-        <div class="platform-setting-item" data-platform-action="add" style="cursor:pointer;border:1px dashed rgba(255,255,255,0.15);">
-            <div class="platform-icon" style="width:4vh;height:4vh;border-radius:1vh;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.05);">
-                <svg width="2vh" height="2vh" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            </div>
-            <div class="platform-details">
-                <div class="platform-name" style="color:rgba(255,255,255,0.5);">添加自定义音源</div>
-                <div class="platform-desc">点击添加你的自定义音源平台</div>
-            </div>
-        </div>
-    `;
-    container.querySelectorAll('[data-author-url]').forEach(el => {
-        el.addEventListener('click', e => {
-            e.stopPropagation();
-            window.open(el.dataset.authorUrl, '_blank', 'noopener,noreferrer');
-        });
-    });
-    const addPlatform = container.querySelector('[data-platform-action="add"]');
-    if (addPlatform) addPlatform.addEventListener('click', () => window.app?.showAddPlatformModal?.());
+    console.warn('[StyleCore] AerSettingsUI 未就绪, 跳过设置渲染');
 };
 
 // 更新样式选中状态
@@ -701,66 +493,6 @@ StyleCore.selectStyle = async function(styleId) {
     this.updateActiveStyle(styleId);
     localStorage.setItem('AerMusic_PlayStyle', styleId);
     window.location.href = window.location.origin + window.location.pathname + window.location.search;
-};
-
-// 渲染已保存的自定义样式列表
-StyleCore.renderSavedStyles = function() {
-    const container = document.getElementById('saved-styles-list');
-    if (!container) return;
-    
-    if (this.customStyles.length === 0) {
-        container.innerHTML = '';
-        return;
-    }
-    
-    container.innerHTML = this.customStyles.map(style => `
-        <div class="saved-style-item" data-style-id="${styleEsc(style.id)}">
-            <div class="saved-style-info">
-                <span class="saved-style-name">${styleEsc(style.name)}</span>
-                <span class="saved-style-desc">${styleEsc(style.description || '')}</span>
-            </div>
-            <div class="saved-style-actions">
-                <div class="saved-style-btn" data-style-action="use">使用</div>
-                <div class="saved-style-btn delete" data-style-action="delete">删除</div>
-            </div>
-        </div>
-    `).join('');
-    container.querySelectorAll('.saved-style-item').forEach(item => {
-        const id = item.dataset.styleId;
-        item.querySelector('[data-style-action="use"]')?.addEventListener('click', () => window.app?.switchStyle?.(id));
-        item.querySelector('[data-style-action="delete"]')?.addEventListener('click', () => {
-            this.removeCustomStyle(id);
-            this.renderSavedStyles();
-            this.renderStyleList();
-        });
-    });
-};
-
-// 初始化设置渲染（在 app 加载完成后调用）
-StyleCore.initSettings = async function() {
-    console.log('[StyleCore] initSettings 调用');
-    
-    // 先初始化样式系统（发现并注册内置样式）
-    await this.init();
-    
-    // 渲染各个设置面板
-    this.renderStyleList();
-    this.renderPlatformList();
-    this.renderSavedStyles();
-    
-    // 恢复 GPU 加速设置
-    const gpuEnabled = localStorage.getItem('AerMusic_GPUAccel') !== 'false';
-    const gpuSwitch = document.getElementById('set-gpu-accel');
-    if (gpuSwitch) {
-        gpuSwitch.checked = gpuEnabled;
-    }
-    
-    // 恢复翻译歌词颜色
-    const transLyricColor = localStorage.getItem('AerMusic_TransLyricColor') || '#aaaaaa';
-    const transPicker = document.getElementById('set-trans-lyric-color-picker');
-    const transHex = document.getElementById('set-trans-lyric-color-hex');
-    if (transPicker) transPicker.value = transLyricColor;
-    if (transHex) transHex.value = transLyricColor;
 };
 
 // 导出到全局

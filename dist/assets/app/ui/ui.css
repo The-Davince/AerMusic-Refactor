@@ -1,0 +1,451 @@
+/* 系统UI与模式样式 (从默认主题 injectCustomStyles 上移到 core) */
+            #initial-loader {
+                z-index: 11000 !important;
+            }
+            body.search-active #app-logo,
+            body.settings-active #app-logo {
+                opacity: 0 !important;
+                pointer-events: none !important;
+            }
+            /* 搜索页时搜索框应该显示，只有设置页时才隐藏 */
+            body.settings-active .search-container {
+                opacity: 0 !important;
+                pointer-events: none !important;
+                visibility: hidden !important;
+            }
+            /* 搜索页时确保搜索框可见 */
+            body.search-active .search-container {
+                opacity: 1 !important;
+                pointer-events: auto !important;
+                visibility: visible !important;
+            }
+            body.only-lyrics-enabled.page-recommend #top-bar {
+                opacity: 0 !important;
+                pointer-events: none !important;
+                background: transparent !important;
+                transition: opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1) !important;
+            }
+            /* 只显示歌词模式下，鼠标移过标题区域渐显标题 */
+            body.only-lyrics-enabled.page-recommend #top-bar #app-logo {
+                opacity: 0 !important;
+                pointer-events: none !important;
+                transition: opacity 0.3s ease !important;
+            }
+            body.only-lyrics-enabled.page-recommend #top-bar:hover #app-logo {
+                opacity: 0 !important;
+            }
+            body.only-lyrics-enabled.page-recommend #app-logo:hover {
+                opacity: 1 !important;
+                pointer-events: auto !important;
+            }
+            /* 只显示歌词模式下，鼠标移过搜索框区域渐显搜索框 */
+            body.only-lyrics-enabled.page-recommend .search-container {
+                opacity: 0 !important;
+                pointer-events: none !important;
+                transition: opacity 0.3s ease !important;
+            }
+            body.only-lyrics-enabled.page-recommend #top-bar:hover .search-container {
+                opacity: 0 !important;
+            }
+            body.only-lyrics-enabled.page-recommend .search-container:hover {
+                opacity: 1 !important;
+                pointer-events: auto !important;
+            }
+            .side-tools {
+                transition: opacity 0.5s cubic-bezier(0.25, 1, 0.5, 1), transform 0.5s cubic-bezier(0.25, 1, 0.5, 1), visibility 0.5s ease;
+            }
+            .side-tools.hidden-tools {
+                opacity: 0 !important;
+                pointer-events: none !important;
+                visibility: hidden !important;
+                transform: translateX(30px) !important;
+            }
+            body:not(.page-recommend) #fixed-genius-bar {
+                opacity: 1 !important;
+                pointer-events: auto !important;
+                visibility: visible !important;
+            }
+            body.settings-active #fixed-genius-bar {
+                opacity: 0 !important;
+                pointer-events: none !important;
+                visibility: hidden !important;
+            }
+            body.ui-hide-enabled #top-bar,
+            body.ui-hide-enabled .side-tools:not(.hidden-tools),
+            body.ui-hide-enabled #fixed-genius-bar,
+            body.ui-hide-enabled #sys-sidebar {
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.5s cubic-bezier(0.25, 1, 0.5, 1) !important;
+            }
+            body.ui-hide-enabled #top-bar.ui-visible,
+            body.ui-hide-enabled .side-tools:not(.hidden-tools).ui-visible,
+            body.ui-hide-enabled #fixed-genius-bar.ui-visible,
+            body.ui-hide-enabled #sys-sidebar.ui-visible {
+                opacity: 1 !important;
+                pointer-events: auto !important;
+            }
+            body.only-lyrics-enabled .song-info-side {
+                opacity: 0 !important;
+                pointer-events: none !important;
+                visibility: hidden !important;
+                width: 0 !important;
+                flex: 0 !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            body.only-lyrics-enabled .lyric-side {
+                margin-left: 0 !important;
+                max-width: 80vw !important;
+                width: 80vw !important;
+                flex: 1 !important;
+                transform: translateX(0) !important;
+            }
+            body.only-lyrics-enabled .song-page {
+                justify-content: center !important;
+            }
+            .only-lyrics-card-trigger {
+                position: fixed;
+                top: 0;
+                left: 30vw;
+                width: 40vw;
+                height: 12vh;
+                z-index: 10004;
+                background: transparent;
+                display: none;
+            }
+            body.only-lyrics-enabled.page-recommend .only-lyrics-card-trigger {
+                display: block;
+            }
+            .only-lyrics-card {
+                position: fixed;
+                top: 2.5vh;
+                left: 50%;
+                transform: translateX(-50%) translateY(-10px);
+                background: rgba(25, 25, 25, 0.75);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 12px;
+                padding: 8px 16px;
+                display: none;
+                align-items: center;
+                gap: 12px;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1), transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+                z-index: 10005;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            }
+            body.only-lyrics-enabled.page-recommend .only-lyrics-card {
+                display: flex;
+            }
+            body.only-lyrics-enabled.page-recommend .only-lyrics-card-trigger:hover + .only-lyrics-card,
+            body.only-lyrics-enabled.page-recommend .only-lyrics-card:hover {
+                opacity: 1 !important;
+                pointer-events: auto !important;
+                transform: translateX(-50%) translateY(0) !important;
+            }
+            .only-lyrics-card img {
+                width: 4.5vh;
+                height: 4.5vh;
+                border-radius: 6px;
+                object-fit: cover;
+            }
+            .only-lyrics-card .ol-card-info {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                text-align: left;
+            }
+            .only-lyrics-card .ol-card-title {
+                font-size: 1.6vh;
+                font-weight: bold;
+                color: #fff;
+                cursor: pointer;
+                transition: color 0.2s;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 250px;
+            }
+            .only-lyrics-card .ol-card-title:hover {
+                color: var(--apple-red);
+            }
+            .only-lyrics-card .ol-card-artist {
+                font-size: 1.2vh;
+                color: rgba(255, 255, 255, 0.6);
+                cursor: pointer;
+                transition: color 0.2s;
+                margin-top: 2px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 250px;
+            }
+            .only-lyrics-card .ol-card-artist:hover {
+                color: var(--apple-red);
+            }
+            .side-tools .tool-btn {
+                position: relative;
+                transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease, opacity 0.2s ease !important;
+            }
+            .side-tools .tool-btn:not(.active):hover {
+                background: rgba(255, 255, 255, 0.15) !important;
+                color: #ffffff !important;
+                transform: scale(1.08);
+            }
+            .side-tools .tool-btn.active:hover {
+                opacity: 0.75;
+                transform: scale(1.08);
+            }
+            .side-tools .tool-btn::after {
+                content: attr(data-tooltip);
+                position: absolute;
+                right: 130%;
+                top: 50%;
+                transform: translateY(-50%) translateX(8px);
+                background: rgba(18, 18, 18, 0.82);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: #ffffff;
+                padding: 6px 12px;
+                border-radius: 8px;
+                font-size: 1.3vh;
+                font-weight: 500;
+                white-space: nowrap;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.25s cubic-bezier(0.25, 1, 0.5, 1), transform 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+            }
+            .side-tools .tool-btn:hover::after {
+                opacity: 1;
+                transform: translateY(-50%) translateX(0);
+            }
+            .result-actions .action-btn {
+                position: relative;
+                transition: transform 0.2s ease, background-color 0.2s ease !important;
+            }
+            .result-actions .action-btn:hover {
+                background-color: rgba(255, 255, 255, 0.15) !important;
+                transform: scale(1.1);
+            }
+            .result-actions .action-btn::after {
+                content: attr(data-tooltip);
+                position: absolute;
+                bottom: 130%;
+                left: 50%;
+                transform: translateX(-50%) translateY(8px);
+                background: rgba(18, 18, 18, 0.85);
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                color: #ffffff;
+                padding: 4px 10px;
+                border-radius: 6px;
+                font-size: 1.2vh;
+                font-weight: 500;
+                white-space: nowrap;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.25s cubic-bezier(0.25, 1, 0.5, 1), transform 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+                z-index: 1000;
+            }
+            .result-actions .action-btn:hover::after {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+            #favorites-content.playlists-grid-view {
+                grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+                gap: 20px !important;
+            }
+            #favorites-content.playlists-grid-view .song-card {
+                max-width: 130px !important;
+                width: 100% !important;
+                margin: 0 auto !important;
+                padding: 8px !important;
+                border-radius: 12px !important;
+                background: rgba(25, 25, 25, 0.3) !important;
+                border: 1px solid rgba(255, 255, 255, 0.05) !important;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important;
+            }
+            #favorites-content.playlists-grid-view .song-card img {
+                max-height: 114px !important;
+                max-width: 114px !important;
+                width: 100% !important;
+                aspect-ratio: 1/1 !important;
+                object-fit: cover !important;
+                margin: 0 auto 6px auto !important;
+                display: block !important;
+                border-radius: 8px !important;
+            }
+            body:not(.sidebar-expanded) .sys-sidebar {
+                width: 70px !important;
+                padding: 3vh 0 !important;
+                left: -70px !important;
+            }
+            body.sidebar-visible:not(.sidebar-expanded) .sys-sidebar {
+                transform: translateX(70px) !important;
+            }
+            body:not(.sidebar-expanded) .sidebar-item {
+                width: 44px !important;
+                height: 44px !important;
+                margin: 0 auto 0.8vh auto !important;
+                padding: 0 !important;
+                justify-content: center !important;
+                border-radius: 12px !important;
+            }
+            body:not(.sidebar-expanded) .sidebar-item .icon-wrapper {
+                margin: 0 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+            body:not(.sidebar-expanded) .sidebar-item .sidebar-text {
+                display: none !important;
+            }
+            body:not(.sidebar-expanded) .sidebar-item {
+                position: relative;
+            }
+            body:not(.sidebar-expanded) .sidebar-item::after {
+                content: attr(title);
+                position: absolute;
+                left: 130%;
+                top: 50%;
+                transform: translateY(-50%) translateX(8px);
+                background: rgba(18, 18, 18, 0.85);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: #ffffff;
+                padding: 6px 12px;
+                border-radius: 8px;
+                font-size: 1.2vh;
+                font-weight: 500;
+                white-space: nowrap;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.25s ease, transform 0.25s ease;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+                z-index: 10000;
+            }
+            body:not(.sidebar-expanded) .sidebar-item:hover::after {
+                opacity: 1;
+                transform: translateY(-50%) translateX(0);
+            }
+            body:not(.sidebar-expanded) .sidebar-logo-placeholder {
+                opacity: 0 !important;
+                transition: opacity 0.3s ease !important;
+            }
+            body.sidebar-expanded .sidebar-logo-placeholder {
+                opacity: 1 !important;
+                transition: opacity 0.3s ease 0.1s !important;
+            }
+            /* 底部留白防止控制栏遮挡 */
+            #search-overlay .result-grid-container,
+            #favorites-overlay .result-grid-container,
+            #playlists-overlay .result-grid-container {
+                padding-bottom: 16vh !important;
+            }
+            .page-footer-text {
+                text-align: center;
+                padding: 3vh 0 12vh;
+                font-size: 1.2vh;
+                color: rgba(255,255,255,0.25);
+                line-height: 1.8;
+                grid-column: 1 / -1;
+            }
+            .page-footer-text a {
+                color: rgba(255,255,255,0.35);
+                text-decoration: none;
+                transition: color 0.2s;
+            }
+            .page-footer-text a:hover {
+                color: var(--apple-red, #ff3b30);
+            }
+            .search-container {
+                position: relative;
+                overflow: visible !important;
+            }
+            /* 侧边栏高亮平滑过渡 */
+            .sidebar-menu {
+                position: relative;
+            }
+            .sidebar-item {
+                position: relative;
+                transition: background 0.3s ease, color 0.3s ease !important;
+            }
+            /* 搜索分类标签平滑过渡 */
+            .platform-tab {
+                transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1) !important;
+            }
+            .platform-tab.active .name {
+                transition: color 0.3s ease !important;
+            }
+            .search-suggest-popup {
+                position: absolute;
+                top: 115%;
+                left: 0;
+                right: 0;
+                background: rgba(28, 28, 30, 0.88);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 14px;
+                box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+                max-height: 320px;
+                overflow-y: auto;
+                z-index: 10006;
+                display: none;
+                opacity: 0;
+                visibility: hidden;
+                transform: translateY(-0.5vh);
+                transition: opacity 0.18s ease, visibility 0.18s ease, transform 0.18s ease;
+                flex-direction: column;
+                padding: 6px;
+                box-sizing: border-box;
+            }
+            .search-suggest-popup.is-open { opacity: 1; visibility: visible; transform: translateY(0); }
+            .search-suggest-popup.is-closing { opacity: 0; visibility: hidden; transform: translateY(-0.5vh); pointer-events: none; }
+            .suggest-title {
+                font-size: 11px;
+                color: rgba(255, 255, 255, 0.35);
+                padding: 6px 12px 2px 12px;
+                font-family: "MiSans Semibold";
+                text-transform: uppercase;
+                text-align: left;
+                pointer-events: none;
+            }
+            .suggest-item {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 10px 12px;
+                border-radius: 10px;
+                cursor: pointer;
+                transition: background-color 0.2s ease;
+                text-align: left;
+            }
+            .suggest-item:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+            }
+            .suggest-item .name {
+                font-size: 13px;
+                color: #ffffff;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 170px;
+            }
+            .suggest-item .artist {
+                font-size: 11px;
+                color: rgba(255, 255, 255, 0.45);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                margin-left: auto;
+                max-width: 100px;
+            }

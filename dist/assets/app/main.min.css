@@ -1697,3 +1697,87 @@ body.only-lyrics-enabled .only-lyrics-card:hover {
     pointer-events: none;
     transform: translate3d(0, 0, 0); 
 } **/
+/* 控制栏兜底外观: core 创建 #fixed-genius-bar 的默认样式, 主题 style.css 后置可整体覆写 */
+#fixed-genius-bar {
+    position: fixed;
+    bottom: 2vh;
+    left: 50%;
+    z-index: 2000;
+    width: min(80vh, calc(100vw - 4vh));
+    max-width: calc(100vw - 4vh);
+    height: 7vh;
+    background: rgba(20, 20, 20, 0.6);
+    backdrop-filter: blur(2vh);
+    -webkit-backdrop-filter: blur(2vh);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1.5vh;
+    display: flex;
+    align-items: center;
+    padding: 0 2vh;
+    color: #fff;
+    transform: translateX(-50%);
+    overflow: hidden;
+    transition: transform 0.5s ease, opacity 0.5s ease;
+}
+#fixed-genius-bar.hidden {
+    opacity: 0;
+    transform: translateX(-50%) translateY(120%);
+    pointer-events: none;
+}
+#fixed-genius-bar .fixed-actions {
+    display: flex;
+    align-items: center;
+    gap: 1.2vh;
+    margin-left: auto;
+}
+#fixed-genius-bar .fixed-time-box {
+    display: flex;
+    gap: 0.6vh;
+    font-size: 1.3vh;
+    opacity: 0.6;
+}
+#fixed-genius-bar .btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 4vh;
+    height: 4vh;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.75);
+    transition: transform 0.2s ease, color 0.2s ease;
+}
+#fixed-genius-bar .btn:hover {
+    color: #fff;
+    transform: scale(1.1);
+}
+#fixed-genius-bar .genius-progress-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 0.5vh;
+}
+#fixed-genius-bar .genius-progress-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 0;
+    background: var(--apple-red, #ff3b30);
+}
+#fixed-genius-bar .fixed-seek-input {
+    position: absolute;
+    top: -1vh;
+    left: 0;
+    width: 100%;
+    height: 2.5vh;
+    opacity: 0;
+    cursor: pointer;
+}
+#fixed-genius-bar .fixed-genius-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 1.5vh;
+    min-width: 0;
+}
