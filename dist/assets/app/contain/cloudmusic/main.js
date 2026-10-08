@@ -730,7 +730,7 @@ const CloudMusicPlatform = {
         let ranked = this._shuffle(candidates).sort((a, b) => b.score - a.score);
         ranked = this._collapseVariants(ranked);
         const direct = this._pickDiverse(ranked.filter(item => item.sources.has('similar')), 19);
-        const explore = this._pickDiverse(ranked.filter(item => !item.sources.has('similar')), 5);
+        const explore = this._pickDiverse(ranked.filter(item => !item.sources.has('similar')), 8);
         const selected = [];
         let directIndex = 0;
         let exploreIndex = 0;
@@ -740,7 +740,9 @@ const CloudMusicPlatform = {
             if (directIndex >= direct.length) while (exploreIndex < explore.length && selected.length < 24) selected.push(explore[exploreIndex++]);
         }
         const pool = this._pickDiverse(selected, 24).map(item => item.song);
-        return pool;
+        const headSize = Math.min(8, pool.length);
+        const head = this._shuffle(pool.slice(0, headSize));
+        return head.concat(pool.slice(headSize));
     },
 
     async _getSimilarSongs(songId) {
