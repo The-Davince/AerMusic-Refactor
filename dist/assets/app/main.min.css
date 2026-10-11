@@ -1763,3 +1763,10 @@ body.only-lyrics-enabled .only-lyrics-card:hover {
         cursor: pointer;
     }
 }
+
+.cover-box { position: relative; border-radius: 1.3889vh; }
+.item-cover-box { position: relative; border-radius: 4px; }
+.cover-mask { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); border-radius: inherit; pointer-events: none; }
+.url-loading > .cover-mask { display: flex; }
+.cover-mask-spinner { width: 34%; aspect-ratio: 1; border: 0.35vh solid rgba(255,255,255,0.25); border-top-color: #fff; border-radius: 50%; animation: url-mask-spin 0.8s linear infinite; }
+@keyframes url-mask-spin { to { transform: rotate(360deg); } }

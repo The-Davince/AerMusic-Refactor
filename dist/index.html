@@ -184,6 +184,21 @@
             <div id="platform-settings" class="platform-settings"></div>
         </div>
         <div class="settings-section">
+            <h3 class="settings-label">播放</h3>
+            <div class="settings-flex-row">
+                <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
+                    <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">起播缓冲</span>
+                    <select id="set-pre-roll" onchange="app.updateSetting('preRollSec', this.value)"
+                        style="background:rgba(255,255,255,0.1);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:0.5vh 1vh;font-size:1.3vh;outline:none;">
+                        <option value="0">不等待</option>
+                        <option value="15">15 秒</option>
+                        <option value="30">30 秒</option>
+                    </select>
+                    <span style="font-size:1vh;color:rgba(255,255,255,0.4);">音频缓冲到该秒数后再开始播放, 弱网下更不易卡顿</span>
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
             <h3 class="settings-label">视觉效果</h3>
             <div class="settings-flex-row">
                 <div class="setting-item">
