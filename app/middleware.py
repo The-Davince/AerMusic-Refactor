@@ -9,7 +9,15 @@ SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "X-Frame-Options": "SAMEORIGIN",
+    # 只锁不砸业务的三条: 自定义样式/音源要按用户填的外网 URL 加载 JS/CSS(style-core 动态 <script>),
+    # 不能锁 script-src/connect-src, 否则开发者特性直接失效
+    "Content-Security-Policy": "object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
 }
+
+
+def _safe_path(path: str) -> str:
+    return path.replace("\n", "").replace("\r", "")
 
 
 class RequestLogMiddleware(BaseHTTPMiddleware):
@@ -23,7 +31,7 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
         try:
             resp = await call_next(request)
         except Exception as e:
-            a(f"http {request.method} {request.url.path} crashed: {type(e).__name__}: {e}", "ERROR", log_id)
+            a(f"http {request.method} {_safe_path(request.url.path)} crashed: {type(e).__name__}: {e}", "ERROR", log_id)
             raise
         elapsed = (time.time() - t0) * 1000
         request.state.elapsed_ms = elapsed
@@ -31,7 +39,7 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             resp.headers.setdefault(k, v)
         resp.headers["X-Log-Id"] = log_id
         if request.url.path != "/api/health":
-            a(f"http {request.method} {request.url.path} status={resp.status_code} "
+            a(f"http {request.method} {_safe_path(request.url.path)} status={resp.status_code} "
               f"elapsed={round(elapsed, 1)}ms ip={_get_real_ip(request)}", "INFO", log_id)
         return resp
 

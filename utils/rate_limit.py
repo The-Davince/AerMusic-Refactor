@@ -1,5 +1,6 @@
 import threading
 import time
+from collections import deque
 
 import config as cfg
 from utils.log import a
@@ -111,3 +112,23 @@ def allow_redis(key, amount, limit, window_seconds):
     except Exception as error:
         _mark_failed(error)
         return None
+
+
+_local_windows = {}
+_local_lock = threading.Lock()
+
+
+def allow_local(key, limit, window_seconds):
+    now = time.monotonic()
+    with _local_lock:
+        queue = _local_windows.setdefault(key, deque())
+        while queue and now - queue[0] >= window_seconds:
+            queue.popleft()
+        if len(queue) >= limit:
+            if len(_local_windows) > 4096:
+                for k in list(_local_windows):
+                    if not _local_windows[k]:
+                        _local_windows.pop(k, None)
+            return False
+        queue.append(now)
+        return True

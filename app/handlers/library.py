@@ -16,7 +16,8 @@ MAX_LIBRARY_BYTES = 2 * 1024 * 1024
 
 
 def _resp(req, code, msg, status=200, data=None):
-    return JSONResponse(status_code=status, content={"code": code, "msg": msg, "data": data, "logId": get_log_id(req)})
+    return JSONResponse(status_code=status, content={"code": code, "msg": msg, "data": data, "logId": get_log_id(req)},
+                        headers={"Cache-Control": "no-store"})
 
 
 @router.get("/library")

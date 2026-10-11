@@ -8,17 +8,23 @@ from fastapi.responses import JSONResponse
 
 import config as cfg
 from utils import db, security
-from utils.log import a, get_log_id
+from utils.log import a, get_log_id, _get_real_ip
+from utils.rate_limit import allow_local
 from utils.validate import checkUsername, checkPassword
 
 router = APIRouter()
 
 COOKIE = "aermusic_session"
 MAX_AUTH_BODY = 64 * 1024
+LOGIN_MAX_PER_IP = 100
+LOGIN_WINDOW_SECONDS = 600
+REGISTER_MAX_PER_IP = 200
+REGISTER_WINDOW_SECONDS = 3600
 
 
 def _resp(req, code, msg, status=200, data=None):
-    return JSONResponse(status_code=status, content={"code": code, "msg": msg, "data": data, "logId": get_log_id(req)})
+    return JSONResponse(status_code=status, content={"code": code, "msg": msg, "data": data, "logId": get_log_id(req)},
+                        headers={"Cache-Control": "no-store"})
 
 
 async def readJsonBody(req: Request, limit: int):
@@ -81,6 +87,9 @@ def _setSession(resp, userid: int):
 @router.post("/user/register")
 async def register(req: Request):
     log_id = get_log_id(req)
+    if not allow_local("reg|" + _get_real_ip(req), REGISTER_MAX_PER_IP, REGISTER_WINDOW_SECONDS):
+        a(f"user register rate limited: log_id={log_id}", "WARN", log_id)
+        return _resp(req, 429, "注册过于频繁, 请稍后再试", 429)
     body, err = await readJsonBody(req, MAX_AUTH_BODY)
     if err:
         return err
@@ -109,12 +118,17 @@ async def register(req: Request):
 @router.post("/user/login")
 async def login(req: Request):
     log_id = get_log_id(req)
+    if not allow_local("login|" + _get_real_ip(req), LOGIN_MAX_PER_IP, LOGIN_WINDOW_SECONDS):
+        a(f"user login rate limited: log_id={log_id}", "WARN", log_id)
+        return _resp(req, 429, "登录过于频繁, 请稍后再试", 429)
     body, err = await readJsonBody(req, MAX_AUTH_BODY)
     if err:
         return err
     username = _extractUsername(body)
     password = body.get("password")
     row = db.get("SELECT id, pass, salt FROM users WHERE username = ?", (username,)) if username else None
+    if not row:
+        await asyncio.to_thread(security.checkPass, password if isinstance(password, str) else "", "0" * 64, "00" * 16)
     if not row or not isinstance(password, str) or not await asyncio.to_thread(security.checkPass, password, row["pass"], row["salt"]):
         a(f"user login failed: name={_cleanLogName(username)} log_id={log_id}", "WARN")
         return _resp(req, 401, "用户名或密码不对", 401)

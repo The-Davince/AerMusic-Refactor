@@ -22,6 +22,10 @@ NETEASE_URL_KEY = os.environ.get("NETEASE_URL_KEY", "")
 
 UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "10"))
 UPSTREAM_RETRIES = int(os.environ.get("UPSTREAM_RETRIES", "2"))
+UPSTREAM_MAX_CONNECTIONS = int(os.environ.get("UPSTREAM_MAX_CONNECTIONS", "300"))
+UPSTREAM_MAX_KEEPALIVE = int(os.environ.get("UPSTREAM_MAX_KEEPALIVE", "100"))
+
+TO_THREAD_WORKERS = int(os.environ.get("TO_THREAD_WORKERS", "64"))
 
 # 可选 Redis/Garnet, 用于多进程共享推荐事件限流, 不配置时使用进程内限流
 REDIS_ADDRESS = os.environ.get("REDIS_ADDRESS", "").strip()
@@ -34,7 +38,7 @@ REDIS_RATE_PREFIX = os.environ.get("REDIS_RATE_PREFIX", "aermusic:recommend:rate
 
 # 缓存秒数, 按接口名覆盖, 如 CACHE_URL=600
 CACHE_DEFAULT = int(os.environ.get("CACHE_DEFAULT", "300"))
-CACHE_MAX_ENTRIES = int(os.environ.get("CACHE_MAX_ENTRIES", "800"))
+CACHE_MAX_ENTRIES = int(os.environ.get("CACHE_MAX_ENTRIES", "500"))
 
 # 上游单页最大条数, 防止 limit=999999 这类参数打到上游
 MAX_LIMIT = int(os.environ.get("MAX_LIMIT", "100"))

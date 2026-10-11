@@ -2,6 +2,7 @@ import time
 from urllib.parse import urlencode
 
 import httpx
+from httpx import Limits
 
 from . import cache
 from .log import log_ext
@@ -45,7 +46,12 @@ class UpstreamError(Exception):
 def init() -> None:
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(timeout=cfg.UPSTREAM_TIMEOUT, follow_redirects=True)
+        _client = httpx.AsyncClient(
+            timeout=cfg.UPSTREAM_TIMEOUT,
+            follow_redirects=True,
+            limits=Limits(max_connections=cfg.UPSTREAM_MAX_CONNECTIONS,
+                          max_keepalive_connections=cfg.UPSTREAM_MAX_KEEPALIVE),
+        )
 
 
 async def aclose() -> None:

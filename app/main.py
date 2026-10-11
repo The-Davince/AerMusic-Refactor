@@ -1,8 +1,11 @@
 import importlib
 import pkgutil
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from html import escape
 from pathlib import Path
+import asyncio
+import time
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
@@ -12,7 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import config as cfg
 from utils import db, upstream
 from utils.log import a, get_log_id
-from app.middleware import RequestLogMiddleware, CorsMiddleware, SECURITY_HEADERS
+from app.middleware import RequestLogMiddleware, CorsMiddleware, SECURITY_HEADERS, _safe_path
 
 _PAGE_DIR = Path(__file__).resolve().parent.parent / "page"
 _PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
@@ -53,7 +56,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 async def server_error_handler(request: Request, exc):
     log_id = get_log_id(request)
-    a(f"unhandled server error on {request.url.path}", "ERROR", log_id)
+    a(f"unhandled server error on {_safe_path(request.url.path)}", "ERROR", log_id)
     if request.url.path.startswith("/api/"):
         resp = JSONResponse(status_code=500, content={"code": 500, "msg": "服务器开小差了", "data": None, "logId": log_id})
     else:
@@ -70,10 +73,14 @@ async def lifespan(app: FastAPI):
     from setup import TABLES
     for ddl in TABLES:
         db.run(ddl)
+    db.run("DELETE FROM sessions WHERE expiresat < ?", (int(time.time()),))
     upstream.init()
+    executor = ThreadPoolExecutor(max_workers=cfg.TO_THREAD_WORKERS, thread_name_prefix="tothread")
+    asyncio.get_running_loop().set_default_executor(executor)
     a(f"server started: {cfg.APP_NAME}")
     yield
     await upstream.aclose()
+    executor.shutdown(wait=False)
     db.close()
     a("stopping server")
 

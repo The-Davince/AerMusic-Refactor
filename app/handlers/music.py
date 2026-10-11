@@ -8,9 +8,15 @@ from fastapi.responses import JSONResponse, Response
 
 import config as cfg
 from utils import cache, upstream
-from utils.log import a, get_log_id
+from utils.log import a, get_log_id, _get_real_ip
+from utils.rate_limit import allow_local
 
 router = APIRouter()
+
+MUSIC_MAX_PER_IP = 600
+MUSIC_WINDOW_SECONDS = 10
+COVER_MAX_PER_IP = 2000
+COVER_WINDOW_SECONDS = 60
 
 # 路径与旧版前端保持一致, 前端一行不用改
 _ROUTES = [
@@ -25,6 +31,8 @@ _ROUTES = [
 def _route(name: str):
     async def handler(req: Request):
         log_id = get_log_id(req)
+        if not allow_local("music|" + _get_real_ip(req), MUSIC_MAX_PER_IP, MUSIC_WINDOW_SECONDS):
+            return JSONResponse(status_code=429, content={"code": 429, "msg": "请求过于频繁", "data": None, "logId": log_id})
         try:
             data = await upstream.fetch(name, req.query_params)
         except upstream.UpstreamError as e:
@@ -74,6 +82,14 @@ async def cover(req: Request):
         return JSONResponse(status_code=403, content={"code": 403, "msg": "来源不在白名单", "data": None, "logId": log_id})
     if not any(host == h or host.endswith("." + h) for h in cfg.COVER_ALLOW_HOSTS):
         return JSONResponse(status_code=403, content={"code": 403, "msg": "来源不在白名单", "data": None, "logId": log_id})
+    key = "cover|" + u
+    hit = cache.get(key)
+    if hit is not None:
+        body, ctype = hit
+        return Response(content=body, media_type=ctype,
+                        headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=86400"})
+    if not allow_local("cover|" + _get_real_ip(req), COVER_MAX_PER_IP, COVER_WINDOW_SECONDS):
+        return JSONResponse(status_code=429, content={"code": 429, "msg": "请求过于频繁", "data": None, "logId": log_id})
     try:
         resolved = await asyncio.to_thread(socket.getaddrinfo, host, port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)
         addresses = {item[4][0] for item in resolved if item[4]}
@@ -81,22 +97,17 @@ async def cover(req: Request):
             return JSONResponse(status_code=403, content={"code": 403, "msg": "来源不在白名单", "data": None, "logId": log_id})
     except (OSError, ValueError):
         return JSONResponse(status_code=502, content={"code": 502, "msg": "封面地址无法解析", "data": None, "logId": log_id})
-    key = "cover|" + u
-    hit = cache.get(key)
-    if hit is not None:
-        body, ctype = hit
-    else:
-        try:
-            resp = await upstream._client.get(u, timeout=10, follow_redirects=False)
-        except Exception as e:
-            a(f"cover proxy failed: {u} {type(e).__name__}", "WARN", log_id)
-            return JSONResponse(status_code=502, content={"code": 502, "msg": "封面获取失败", "data": None, "logId": log_id})
-        if resp.status_code != 200 or len(resp.content) > 2 * 1024 * 1024:
-            return JSONResponse(status_code=502, content={"code": 502, "msg": "封面获取失败", "data": None, "logId": log_id})
-        ctype = resp.headers.get("content-type", "application/octet-stream")
-        if not ctype.lower().startswith("image/"):
-            return JSONResponse(status_code=400, content={"code": 400, "msg": "不是图片", "data": None, "logId": log_id})
-        body = resp.content
-        cache.put(key, (body, ctype), 86400)
+    try:
+        resp = await upstream._client.get(u, timeout=10, follow_redirects=False)
+    except Exception as e:
+        a(f"cover proxy failed: {u} {type(e).__name__}", "WARN", log_id)
+        return JSONResponse(status_code=502, content={"code": 502, "msg": "封面获取失败", "data": None, "logId": log_id})
+    if resp.status_code != 200 or len(resp.content) > 1024 * 1024:
+        return JSONResponse(status_code=502, content={"code": 502, "msg": "封面获取失败", "data": None, "logId": log_id})
+    ctype = resp.headers.get("content-type", "application/octet-stream")
+    if not ctype.lower().startswith("image/"):
+        return JSONResponse(status_code=400, content={"code": 400, "msg": "不是图片", "data": None, "logId": log_id})
+    body = resp.content
+    cache.put(key, (body, ctype), 3600)
     return Response(content=body, media_type=ctype,
                     headers={"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=86400"})
