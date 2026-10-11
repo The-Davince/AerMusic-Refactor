@@ -28,6 +28,21 @@
         return (a && a.formatTime) ? a.formatTime(t) : '0:00';
     }
 
+    function setFillProgress(fill, ratio) {
+        if (!fill) return;
+        const r = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0;
+        if (fill._aerScaleMode === undefined || fill._aerSheets !== document.styleSheets.length) {
+            if (fill._aerScaleMode !== undefined) { fill.style.width = ""; fill.style.transform = ""; }
+            fill._aerSheets = document.styleSheets.length;
+            const c = fill.parentElement;
+            const cw = c ? c.getBoundingClientRect().width : 0;
+            const fw = cw > 0 ? (parseFloat(window.getComputedStyle(fill).width) || 0) : 0;
+            fill._aerScaleMode = cw > 0 && fw >= cw * 0.9;
+        }
+        if (fill._aerScaleMode) fill.style.transform = "scaleX(" + r + ")";
+        else fill.style.width = (r * 100) + "%";
+    }
+
     /* 默认控制栏 markup (主题 v1 原样, 交互改 data-ctl, 由 core 绑定) */
     function defaultBarHtml() {
         const a = A();
@@ -103,7 +118,7 @@
                 a.isDragging = true;
                 a.audio.currentTime = Number(slider.value);
                 const fill = document.getElementById('fixed-seek-fill');
-                if (fill) fill.style.transform = `scaleX(${slider.value / a.audio.duration})`;
+                if (fill) setFillProgress(fill, slider.value / a.audio.duration);
                 const curTxt = document.getElementById('fixed-cur');
                 if (curTxt) curTxt.innerText = fmtTime(a.audio.currentTime);
             }
@@ -162,7 +177,7 @@
             const slider = document.getElementById('fixed-seek');
             const fill = document.getElementById('fixed-seek-fill');
             if (slider) { slider.max = a.audio.duration; slider.value = p.time; }
-            if (fill) fill.style.transform = `scaleX(${p.time / a.audio.duration})`;
+            if (fill) setFillProgress(fill, p.time / a.audio.duration);
         }
         const t = window.AerTheme;
         if (t && typeof t.updateProgress === 'function') t.updateProgress(p.time, p.duration, a?.currentIndex);

@@ -168,8 +168,8 @@
             };
             var gpuEnabled = localStorage.getItem('AerMusic_GPUAccel');
             if (gpuEnabled === null) {
-                localStorage.setItem('AerMusic_GPUAccel', 'true');
-                gpuEnabled = 'true';
+                localStorage.setItem('AerMusic_GPUAccel', 'false');
+                gpuEnabled = 'false';
             }
             if (gpuEnabled === 'true') {
                 document.body.classList.add('gpu-accelerated');
