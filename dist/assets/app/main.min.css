@@ -646,8 +646,8 @@ body { background-color: var(--bg-color); color: #fff; overflow: hidden; height:
 }
 
 .bgbg {
-    position: absolute; top: 50%; left: 50%; width: 200vw; height: 200vw;
-    margin-top: -100vw; margin-left: -100vw;
+    position: absolute; top: 50%; left: 50%; width: 150vw; height: 150vw;
+    margin-top: -75vw; margin-left: -75vw;
     transition: opacity 2s ease-in-out !important; 
     will-change: transform, opacity;/** transform: translateZ(0); **/
     animation: rotateBg 75s linear infinite; pointer-events: none;
@@ -674,8 +674,8 @@ body.sidebar-expanded #app-logo { opacity: 1 !important; pointer-events: auto !i
     background: var(--glass-bg); backdrop-filter: blur(1vh); 
     border-radius: 1.1111vh; padding: 0.7407vh 1.3889vh;
     display: flex; align-items: center; width: 35.1852vh;
-    border: 0.0926vh solid rgba(255,255,255,0.1); 
-    transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1); 
+    border: 0.0926vh solid rgba(255, 255, 255, 0.1); 
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1), top 0.8s cubic-bezier(0.4, 0, 0.2, 1), left 0.8s cubic-bezier(0.4, 0, 0.2, 1), transform 0.8s cubic-bezier(0.4, 0, 0.2, 1), border-radius 0.8s cubic-bezier(0.4, 0, 0.2, 1); 
     pointer-events: auto;
 }
 
@@ -1665,6 +1665,9 @@ body.only-lyrics-enabled .only-lyrics-card:hover {
 .bgbg.paused-anim {
     animation-play-state: paused !important;
 }
+body.aer-bg-paused .bgbg {
+    animation-play-state: paused !important;
+}
 
 /**
 #bg-canvas { 
@@ -1729,8 +1732,11 @@ body.only-lyrics-enabled .only-lyrics-card:hover {
     }
     #fixed-genius-bar .genius-progress-fill {
         height: 100%;
-        width: 0;
+        width: 100%;
         background: #fff;
+        transform: scaleX(0);
+        transform-origin: 0 50%;
+        transition: transform 0.1s linear;
     }
     #fixed-genius-bar .fixed-genius-content {
         display: flex;

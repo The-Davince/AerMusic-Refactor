@@ -102,9 +102,8 @@
             if (a && a.audio && !isNaN(a.audio.duration)) {
                 a.isDragging = true;
                 a.audio.currentTime = Number(slider.value);
-                const percent = (slider.value / a.audio.duration) * 100;
                 const fill = document.getElementById('fixed-seek-fill');
-                if (fill) fill.style.width = `${percent}%`;
+                if (fill) fill.style.transform = `scaleX(${slider.value / a.audio.duration})`;
                 const curTxt = document.getElementById('fixed-cur');
                 if (curTxt) curTxt.innerText = fmtTime(a.audio.currentTime);
             }
@@ -163,7 +162,7 @@
             const slider = document.getElementById('fixed-seek');
             const fill = document.getElementById('fixed-seek-fill');
             if (slider) { slider.max = a.audio.duration; slider.value = p.time; }
-            if (fill) fill.style.width = `${(p.time / a.audio.duration) * 100}%`;
+            if (fill) fill.style.transform = `scaleX(${p.time / a.audio.duration})`;
         }
         const t = window.AerTheme;
         if (t && typeof t.updateProgress === 'function') t.updateProgress(p.time, p.duration, a?.currentIndex);

@@ -93,10 +93,12 @@
 
 .genius-progress-fill {
     height: 100%;
-    width: 0%;
+    width: 100%;
     background: #fff;
     box-shadow: 0 0 1vh rgba(255, 255, 255, 0.5);
-    transition: width 0.1s linear;
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    transition: transform 0.1s linear;
 }
 
 .fixed-genius-content {
