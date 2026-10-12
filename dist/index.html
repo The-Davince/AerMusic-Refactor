@@ -278,6 +278,16 @@
                         <button type="button" class="color-reset-btn" onclick="app.updateSetting('transIdleColor', '#afafaf')" title="恢复默认值">恢复</button>
                     </div>
                 </div>
+                <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
+                    <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">歌词时间偏移</span>
+                    <div style="display:flex;gap:1vh;align-items:center;">
+                        <button type="button" class="color-reset-btn" onclick="app.stepLyricTimeOffset(-0.5)" title="减少 0.5 秒">-</button>
+                        <input type="text" id="set-lyric-time-offset" inputmode="decimal" placeholder="-0.1" class="hex-input" oninput="app.sanitizeLyricTimeOffsetInput(this)" onchange="app.commitLyricTimeOffsetInput(this)">
+                        <button type="button" class="color-reset-btn" onclick="app.stepLyricTimeOffset(0.5)" title="增加 0.5 秒">+</button>
+                        <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">秒</span>
+                    </div>
+                    <span style="font-size:1vh;color:rgba(255,255,255,0.4);">歌词时间整体偏移该秒数, 正数延后 负数提前, 范围 -5 到 5</span>
+                </div>
             </div>
         </div>
         <div class="settings-section">
@@ -290,7 +300,7 @@
             </div>
         </div>
         <div class="settings-section" style="text-align:center;padding:4vh 0 2vh;opacity:0.4;font-size:1.2vh;line-height:2;color:rgba(255,255,255,0.5);">
-            <div><a href="https://github.com/The-Davince/AerMusic-Dev" target="_blank" rel="noopener noreferrer" style="color:#70dcfd;text-decoration:none;">GitHub</a> https://github.com/The-Davince/AerMusic-Refactor</div>
+            <div><a href="https://github.com/The-Davince/AerMusic-Refactor" target="_blank" rel="noopener noreferrer" style="color:#70dcfd;text-decoration:none;">GitHub</a> https://github.com/The-Davince/AerMusic-Refactor</div>
             <div style="margin-top:1vh;">AerMusic 2023-2026 | 达文西 项目组</div>
         </div>
     </div>
