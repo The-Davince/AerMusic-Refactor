@@ -23,12 +23,24 @@
 1. git下来
 2. 复制 `.env.example` 为 `.env`
 3. 填 `.env`
-4. 安装依赖. 在项目根目录执行 `pip install -r requirements.txt`
-5. 启动项目. 在项目根目录执行 `python run.py`
+4. 安装依赖. 在项目根目录执行下方命令
+```bash
+pip install -r requirements.txt
+```
+5. 启动项目. 在项目根目录执行下方命令
+```bash
+python run.py
+```
+当然，如果你使用redis，则需要额外安装依赖. 在项目根目录执行
+```bash
+pip install redis>=5.0
+```
+或者 ~~多此一举~~
+```bash
+pip install -r requirements-optional.txt
+```
 
-当然，如果你使用redis，则需要额外安装依赖. 在项目根目录执行 `pip install redis>=5.0` 或 `pip install -r requirements-optional.txt`
-
-差不多就部署完了。然后你就能开始愉快的使用了，，
+差不多就完成了。然后你就能开始愉快的使用了，，
 
 ### 推荐上游服务
 | 类型 | URL | 描述 |
