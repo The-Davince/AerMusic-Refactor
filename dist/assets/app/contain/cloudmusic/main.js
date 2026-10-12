@@ -640,12 +640,13 @@ const CloudMusicPlatform = {
                 lrc: mainLrc,
                 tlyric: data.ytlyric?.lyric || (data.tlyric?.lyric || ''),
                 yrc: yrcStr,
+                ttml: data.ttml || "",
                 tList, hasTranslation: tList.length > 0,
                 lyricauthor: lrcauthor, transauthor
             };
         } catch (e) {
             console.error('[CloudMusic] 获取歌词失败:', e);
-            return { lrc: '', tlyric: '', yrc: '', tList: [], hasTranslation: false, lyricauthor: "", transauthor: "" };
+            return { lrc: '', tlyric: '', yrc: '', ttml: '', tList: [], hasTranslation: false, lyricauthor: "", transauthor: "" };
         }
     },
 

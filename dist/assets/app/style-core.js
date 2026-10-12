@@ -52,6 +52,7 @@ const StyleCore = {
     
     builtInStyles: [
         { id: 'default', path: 'default' },
+        { id: 'oldstyle', path: 'oldstyle' },
     ],
 
     showToast(message) {
