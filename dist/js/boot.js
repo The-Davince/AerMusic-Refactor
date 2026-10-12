@@ -3,11 +3,16 @@
         s.id = "script@app";
         s.src = "/static/assets/app/main.min.js";
         s.onload = function() {
-            setTimeout(function() {
-                if (window.StyleCore) {
-                    window.StyleCore.initSettings();
-                }
-            }, 100);
+            waitForSettings(function() {
+                window.StyleCore.initSettings();
+            });
         };
+        function waitForSettings(callback) {
+            if (window.StyleCore && window.AerSettingsUI) {
+                callback();
+            } else {
+                setTimeout(function() { waitForSettings(callback); }, 100);
+            }
+        }
         document.body.appendChild(s);
     })();
