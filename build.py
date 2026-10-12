@@ -11,6 +11,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(str(ROOT / ".env"))
+except Exception:
+    pass
+import config as cfg
+
 _MINIFY_JS = os.environ.get("MINIFY_JS", "1") not in ("0", "false", "False")
 _REQUIRE_JS_MANGLE = os.environ.get("MINIFY_REQUIRE_MANGLE", "1") not in ("0", "false", "False")
 _STATIC_RE = re.compile(r'(src|href)="/static/([^"\'#?]+)"')
@@ -153,6 +161,12 @@ def _apply_assets_manifest(text: str, ref_map: dict) -> str:
     return ASSETS_PLACEHOLDER_RE.sub(payload, text, count=1)
 
 
+def _apply_upstream(text: str) -> str:
+    """把 env 配置的上游地址写进 window.__AER_UPSTREAM__ 占位, 覆盖非geturl接口的前端直连地址"""
+    payload = json.dumps({"apiBase": cfg.NETEASE_API_BASE, "lyricBase": cfg.NETEASE_LYRIC_BASE})
+    return UPSTREAM_PLACEHOLDER_RE.sub(payload, text, count=1)
+
+
 def _rewrite_html(text: str, ref_map: dict) -> str:
     def sub(mm):
         ref = mm.group(2)
@@ -209,6 +223,7 @@ def _rewrite_css(text: str, css_rel: str, ref_map: dict) -> str:
 
 PAGE_PLACEHOLDER_RE = re.compile(r"/\*\s*@build:pages\s*\*/\s*\{[^}]*\}")
 ASSETS_PLACEHOLDER_RE = re.compile(r"/\*\s*@build:assets\s*\*/\s*\{[^}]*\}")
+UPSTREAM_PLACEHOLDER_RE = re.compile(r"/\*\s*@build:upstream\s*\*/\s*\{[^}]*\}")
 _PLACEHOLDER_IMPORT_RE = re.compile(r"/static/js/@(app|i18n)")
 _PAGE_IMPORT_RE = re.compile(r"'/static/js/pages/([A-Za-z0-9_\-]+)'")
 PAGES_IMPORT_PREFIX = "/static/js/pages/"
@@ -292,6 +307,7 @@ def build():
         text = _rewrite_html(text, ref_map)
         text = _apply_page_manifest(text, page_map)
         text = _apply_assets_manifest(text, ref_map)
+        text = _apply_upstream(text)
         out.write_text(text, encoding="utf-8")
         _file_progress(i, len(html_files), f"page/{rel}", a.fast)
     _file_progress_end(a.fast)

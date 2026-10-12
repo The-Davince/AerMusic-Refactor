@@ -20,11 +20,7 @@ COVER_WINDOW_SECONDS = 60
 
 # 路径与旧版前端保持一致, 前端一行不用改
 _ROUTES = [
-    "search", "song/detail", "song/url", "lyric",
-    "artist/detail", "artists", "artist/album", "album",
-    "search/suggest", "simi/song", "simi/artist", "simi/playlist", "artist/top/song",
-    "recommend/songs", "personalized/newsong", "personalized",
-    "top/playlist", "playlist/track/all",
+    "song/url",
 ]
 
 

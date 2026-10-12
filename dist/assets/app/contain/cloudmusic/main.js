@@ -1,13 +1,6 @@
-/**
- * 网易云音乐平台适配器 - 后端API注入版
- * AerMusic 多音源系统
- * 
- * 核心设计：
- * - 所有API请求通过后端内部路由 /api/*，前端看不到真实API地址
- * - 初始推荐数据由后端预注入 window.__INITIAL_DATA__.recommend
- * - 动态请求（搜索、歌词等）走后端内部路由
- * - 多源混合推荐系统（心动模式）
- */
+const __AER_UPSTREAM__ = window.__AER_UPSTREAM__ || {};
+const UP_API_BASE = __AER_UPSTREAM__.apiBase || '';
+const UP_LYRIC_BASE = __AER_UPSTREAM__.lyricBase || '';
 
 const CloudMusicPlatform = {
     INFO: {
@@ -32,26 +25,25 @@ const CloudMusicPlatform = {
             heartbeat: true
         },
         
-        // 仅暴露后端内部路由，真实API地址完全不在前端代码中
         API: {
-            search: '/api/search',
-            detail: '/api/song/detail',
+            search: UP_API_BASE + '/cloudsearch',
+            detail: UP_API_BASE + '/song/detail',
             url: '/api/song/url',
-            lyric: '/api/lyric',
-            similar: '/api/simi/song',
-            similarPlaylist: '/api/simi/playlist',
-            recommend: '/api/recommend/songs',
-            artistTopSong: '/api/artist/top/song',
-            simiArtist: '/api/simi/artist',
-            topPlaylist: '/api/top/playlist',
-            playlistTrackAll: '/api/playlist/track/all',
-            personalizedNewSong: '/api/personalized/newsong',
-            personalized: '/api/personalized',
-            artistDetail: '/api/artist/detail',
-            artists: '/api/artists',
-            artistAlbum: '/api/artist/album',
-            album: '/api/album',
-            searchSuggest: '/api/search/suggest'
+            lyric: UP_LYRIC_BASE,
+            similar: UP_API_BASE + '/simi/song',
+            similarPlaylist: UP_API_BASE + '/simi/playlist',
+            recommend: UP_API_BASE + '/recommend/songs',
+            artistTopSong: UP_API_BASE + '/artist/top/song',
+            simiArtist: UP_API_BASE + '/simi/artist',
+            topPlaylist: UP_API_BASE + '/top/playlist',
+            playlistTrackAll: UP_API_BASE + '/playlist/track/all',
+            personalizedNewSong: UP_API_BASE + '/personalized/newsong',
+            personalized: UP_API_BASE + '/personalized',
+            artistDetail: UP_API_BASE + '/artist/detail',
+            artists: UP_API_BASE + '/artists',
+            artistAlbum: UP_API_BASE + '/artist/album',
+            album: UP_API_BASE + '/album',
+            searchSuggest: UP_API_BASE + '/search/suggest'
         },
         DESCRIPTION: '发现好声音 · 音乐的力量'
     },
