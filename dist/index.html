@@ -7,11 +7,29 @@
     <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
     <title>AerMusic</title>
     <link rel="stylesheet" type="text/css" href="/static/assets/app/font.min.css">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_Latin_VF:VF:Latin&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_VF:VF:Chinese_Simplify,Latin&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans:100,200,300,400,450,500,600,650,700,900:Chinese_Simplify,Latin&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=HYXuanSong55S:400:HYXuanSong&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=HYXuanSong75S:400:HYXuanSong&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_L3:400:Uncommon&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_ArabicUI_VF:VF:ArabicUI&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_Devanagari_VF:VF:Devanagari&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_Gujarati_VF:VF:Gujarati&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_Gurmukhi_VF:VF:Gurmukhi&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_Khmer_VF:VF:Khmer&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_Lao_VF:VF:Lao&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_Myanmar_VF:VF:Myanmar&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=Misans_TC_VF:VF:Chinese_Traditional_TW&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_Thai_VF:VF:Thai&display=swap">
+    <link rel="stylesheet" href="https://cdn-font.hyperos.mi.com/font/css?family=MiSans_Tibetan_VF:VF:Tibetan&display=swap">
     <link id="style@app" rel="stylesheet" href="/static/assets/app/main.min.css">
     <link rel="stylesheet" href="/static/assets/app/search-result.css">
     <link rel="stylesheet" href="/static/assets/app/settings-enhanced.css">
     <link id="playstyle-link" rel="stylesheet" href="">
     <link rel="stylesheet" href="/static/assets/app/ui/ui.css">
+    <link rel="stylesheet" href="/static/assets/app/ui/downloads.css">
+    <link rel="stylesheet" href="/static/assets/app/ui/user.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 </head>
 <body class="modal-active">
@@ -82,6 +100,17 @@
                </span>
                <span class="sidebar-text">歌单</span>
             </button>
+            <button class="sidebar-item" id="sidebar-lyric-btn" title="歌词库" onclick="app.openLyricLibrary()">
+               <span class="icon-wrapper">
+                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                       <line x1="9" y1="7" x2="16" y2="7"></line>
+                       <line x1="9" y1="11" x2="14" y2="11"></line>
+                   </svg>
+               </span>
+               <span class="sidebar-text">歌词库</span>
+            </button>
         </div>
         
         <div class="sidebar-bottom">
@@ -100,7 +129,7 @@
     <div id="initial-loader">
         <div class="loader-content">
             <svg class="loader-logo" viewBox="0 0 200 40" xmlns="http://www.w3.org/2000/svg">
-                <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="MiSans Semibold" font-weight="800" font-size="28" fill="white" letter-spacing="2">AerMusic</text>
+                <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="MiSans" style="font-weight:800" font-size="28" fill="white" letter-spacing="2">AerMusic</text>
             </svg>
             <div class="loader-subtext">正在加载中</div>
         </div>
@@ -112,7 +141,7 @@
                 AerMusic 公告
             </div>
             <div class="modal-body">
-                <!-- <p style="color:#ff6b6b">由于开发正在上学. 各种各样的bug请等待放假后修复.</p> -->
+                
                 <p>欢迎使用 AerMusic 二次重构</p>
                 <p>全新架构，无限可能</p> 
                 <p>3年多的努力 我们从未放弃</p>
@@ -123,6 +152,7 @@
     </div>
     
     <div id="bg-canvas" style="margin: 0 auto; background-color: #000000; width: 100vw; height: 100vh; position: fixed; z-index: -1;">
+        <canvas id="flow-canvas"></canvas>
         <img id="bg-1" class="bgbg" style="opacity: 0.8; transition: opacity 2s ease;" src="">
         <img id="bg-2" class="bgbg" style="opacity: 0; transition: opacity 2s ease;" src="">
     </div>
@@ -130,9 +160,15 @@
     <div id="top-bar">
         <div id="app-logo" style="font-size: 2.2vh; font-weight: 800; letter-spacing: 2px;">AerMusic</div>
         <div class="search-container">
+            <div class="search-side-btn" id="searchBackBtn" onclick="app.goBackFromSearch()" title="返回" aria-label="返回">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+            </div>
             <input type="text" id="searchInp" placeholder="即刻开启音乐之旅" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false">
             <div id="searchBtn" class="btn">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <div class="search-side-btn" id="searchClearBtn" onclick="app.clearSearchResults()" title="清空搜索结果" aria-label="清空搜索结果">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
             </div>
         </div>
     </div>
@@ -171,7 +207,7 @@
         </div>
     </div>
     <div id="theme-overlay">
-        <div class="back-btn" onclick="app.closeThemeSettings()">← 返回</div>
+        <div class="round-back-btn" onclick="app.closeThemeSettings()" title="返回" aria-label="返回"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></div>
         <h2 class="settings-main-title">设置</h2>
         <div class="settings-section">
             <h3 class="settings-label">播放样式</h3>
@@ -246,37 +282,12 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
-                    <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">歌词已播颜色</span>
-                    <div style="display:flex;gap:1vh;align-items:center;">
-                        <input type="color" id="set-lyric-color-picker" oninput="app.updateSetting('lyricColor', this.value)">
-                        <input type="text" id="set-lyric-color-hex" class="hex-input" oninput="app.updateSetting('lyricColor', this.value)">
-                        <button type="button" class="color-reset-btn" onclick="app.updateSetting('lyricColor', '#ffffff')" title="恢复默认值">恢复</button>
-                    </div>
-                </div>
-                <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
-                    <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">歌词未播颜色</span>
-                    <div style="display:flex;gap:1vh;align-items:center;">
-                        <input type="color" id="set-lyric-idle-color-picker" oninput="app.updateSetting('lyricIdleColor', this.value)">
-                        <input type="text" id="set-lyric-idle-color-hex" class="hex-input" oninput="app.updateSetting('lyricIdleColor', this.value)">
-                        <button type="button" class="color-reset-btn" onclick="app.updateSetting('lyricIdleColor', '#afafaf')" title="恢复默认值">恢复</button>
-                    </div>
-                </div>
-                <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
-                    <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">翻译歌词颜色</span>
-                    <div style="display:flex;gap:1vh;align-items:center;">
-                        <input type="color" id="set-trans-lyric-color-picker" oninput="app.updateSetting('transLyricColor', this.value)">
-                        <input type="text" id="set-trans-lyric-color-hex" class="hex-input" oninput="app.updateSetting('transLyricColor', this.value)">
-                        <button type="button" class="color-reset-btn" onclick="app.updateSetting('transLyricColor', '#afafaf')" title="恢复默认值">恢复</button>
-                    </div>
-                </div>
-                <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
-                    <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">翻译歌词未播颜色</span>
-                    <div style="display:flex;gap:1vh;align-items:center;">
-                        <input type="color" id="set-trans-idle-color-picker" oninput="app.updateSetting('transIdleColor', this.value)">
-                        <input type="text" id="set-trans-idle-color-hex" class="hex-input" oninput="app.updateSetting('transIdleColor', this.value)">
-                        <button type="button" class="color-reset-btn" onclick="app.updateSetting('transIdleColor', '#afafaf')" title="恢复默认值">恢复</button>
-                    </div>
+                <div class="setting-item">
+                    <span title="将歌词统一转换为 TTML 渲染 (仅在默认样式下生效)">保持TTML渲染</span>
+                    <label class="apple-switch">
+                        <input type="checkbox" id="set-keep-ttml" onchange="app.updateSetting('keepTtml', this.checked)">
+                        <span class="slider"></span>
+                    </label>
                 </div>
                 <div class="setting-item" style="flex-direction:column;align-items:flex-start;gap:0.8vh;">
                     <span style="font-size:1.3vh;color:rgba(255,255,255,0.6);">歌词时间偏移</span>
@@ -305,7 +316,6 @@
         </div>
     </div>
     <div id="search-overlay">
-        <div class="back-btn" id="hideSearch">← 返回</div>
         <div id="platform-tabs" class="platform-tabs">
             <div class="platform-tab active" data-platform="all" onclick="app.filterSearchPlatform('all')">
                 <span class="name">全部</span>
@@ -313,30 +323,31 @@
             </div>
         </div>
         <div class="result-stats">
-            <span>共找到 <span class="total" id="result-total">0</span> 首歌曲</span>
+            <span class="total" id="result-total" style="display:none;">0</span>
         </div>
         <div class="result-grid-container">
             <div id="searchRes" class="result-grid"></div>
         </div>
     </div>
     <div id="favorites-overlay" class="sub-page-overlay" style="display:none;">
-        <div class="back-btn" onclick="app.switchPage('recommend')">← 返回</div>
+        <div class="round-back-btn" onclick="app.switchPage('recommend')" title="返回" aria-label="返回"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></div>
         <div class="sub-page-header">
             <h1 class="sub-page-title">我的收藏</h1>
-            <div class="sub-page-tabs">
-                <div class="sub-page-tab active" id="fav-songs-tab" onclick="app.switchFavTab('songs')">歌曲 <span class="count" id="fav-songs-count">0</span></div>
-                <div class="sub-page-tab" id="fav-playlists-tab" onclick="app.switchFavTab('playlists')">歌单 <span class="count" id="fav-playlists-count">0</span></div>
-            </div>
-            <div class="sub-page-actions" id="fav-songs-actions" style="margin-top: 20px; display:flex; justify-content:flex-start; align-items:center; gap:10px;">
-                <button class="apple-btn primary-btn" onclick="app.playAllFavorites()">播放全部</button>
-                <button class="apple-btn secondary-btn" onclick="app.shufflePlayFavorites()">随机播放</button>
+            <div class="sub-page-tabs" style="display:flex; justify-content:space-between; align-items:center; gap:1vh;">
+                <div style="display:flex; align-items:center;">
+                    <div class="sub-page-tab active" id="fav-songs-tab" onclick="app.switchFavTab('songs')">歌曲 <span class="count" id="fav-songs-count">0</span></div>
+                    <div class="sub-page-tab" id="fav-playlists-tab" onclick="app.switchFavTab('playlists')">歌单 <span class="count" id="fav-playlists-count">0</span></div>
+                </div>
+                <div class="sub-page-actions" id="fav-songs-actions" style="display:flex; justify-content:flex-end; align-items:center; gap:1vh;">
+                    <button class="apple-btn primary-btn" onclick="app.playAllFavorites()">播放全部</button>
+                </div>
             </div>
             <div id="fav-playlists-actions" style="margin-top: 10px; display:none; justify-content:flex-end; align-items:center;">
                 <div class="view-toggle-btns">
-                    <button class="view-toggle-btn active" data-view="grid" onclick="app.setFavoritesView('grid')" title="网格视图">
+                    <button class="view-toggle-btn active" data-view="grid" onclick="app.setFavoritesView('grid')" data-tooltip="网格视图">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                     </button>
-                    <button class="view-toggle-btn" data-view="list" onclick="app.setFavoritesView('list')" title="列表视图">
+                    <button class="view-toggle-btn" data-view="list" onclick="app.setFavoritesView('list')" data-tooltip="列表视图">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                     </button>
                 </div>
@@ -348,7 +359,7 @@
     </div>
 
     <div id="playlists-overlay" class="sub-page-overlay" style="display:none;">
-        <div class="back-btn" id="playlist-back-btn" onclick="app.switchPage('recommend')">← 返回</div>
+        <div class="round-back-btn" id="playlist-back-btn" onclick="app.switchPage('recommend')" title="返回" aria-label="返回"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></div>
         
         <div id="playlists-list-view">
             <div class="sub-page-header flex-header playlists-header">
@@ -367,10 +378,10 @@
                 <div class="playlists-tools">
                     <button class="apple-btn secondary-btn" id="batch-pl-btn" onclick="app.toggleBatchPlaylistMode()">批量操作</button>
                     <div class="view-toggle-btns">
-                        <button class="view-toggle-btn active" data-view="grid" onclick="app.setPlaylistsView('grid')" title="网格视图" aria-label="网格视图">
+                        <button class="view-toggle-btn active" data-view="grid" onclick="app.setPlaylistsView('grid')" data-tooltip="网格视图" aria-label="网格视图">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                         </button>
-                        <button class="view-toggle-btn" data-view="list" onclick="app.setPlaylistsView('list')" title="列表视图" aria-label="列表视图">
+                        <button class="view-toggle-btn" data-view="list" onclick="app.setPlaylistsView('list')" data-tooltip="列表视图" aria-label="列表视图">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
                         </button>
                     </div>
@@ -382,7 +393,7 @@
         </div>
         
         <div id="playlist-detail-view" style="display:none;">
-            <div class="back-to-list-btn" onclick="app.showPlaylistsList()">← 返回列表</div>
+            <div class="round-back-btn" onclick="app.showPlaylistsList()" title="返回列表" aria-label="返回列表"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg></div>
             <div class="playlist-detail-header-container" id="playlist-detail-header" style="margin-top: 20px;">
             </div>
             <div style="display:flex; justify-content:flex-end; margin: 10px 0;">
@@ -401,13 +412,25 @@
             </div>
         </div>
     </div>
+    <div id="lyric-overlay" class="sub-page-overlay" style="display:none;">
+        <div class="lyric-lib-body">
+            <div class="lyric-lib-tip">前往正在施工 ...</div>
+            <div class="round-back-btn lyric-lib-back" onclick="app.switchPage('recommend')" title="返回" aria-label="返回">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+                <span>返回</span>
+            </div>
+        </div>
+    </div>
     <div class="loading-tip" id="status">AerMusic 2023-2026 | 达文西 项目组</div>
     <div id="toast-container"></div>
     <audio id="frs"></audio>
     <script src="/static/assets/axios/main.min.js"></script>
     <script src="/static/assets/app/color.min.js"></script>
     <script src="/static/assets/app/color-flow.js"></script>
+    <script src="/static/assets/app/flow-bg.js"></script>
     <script src="/static/assets/app/lyric.min.js"></script>
+    <script src="/static/assets/app/ttml-tools.js"></script>
+    <script src="/static/assets/app/qrcode.min.js"></script>
     <script>window.__AER_UPSTREAM__ = /* @build:upstream */ {};</script>
     <script src="/static/assets/app/contain/platform-core.js"></script>
     <script src="/static/assets/app/contain/cloudmusic/main.js"></script>
@@ -421,5 +444,7 @@
     <script src="/static/assets/app/ui/modes.js"></script>
     <script src="/static/assets/app/ui/settings-ui.js"></script>
     <script src="/static/assets/app/ui/controls.js"></script>
+    <script src="/static/assets/app/ui/downloads.js"></script>
+    <script src="/static/assets/app/ui/user.js"></script>
 </body>
 </html>

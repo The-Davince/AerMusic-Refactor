@@ -194,7 +194,7 @@ body {
   border-radius: 3px;
   background: rgba(255,255,255,0.22);
   cursor: pointer;
-  /* 触屏拖动进度条：禁止浏览器手势接管，pointer 事件全程跟手 */
+  
   touch-action: none;
 }
 #progressBar::before {
@@ -698,7 +698,7 @@ body {
   width: 0.3em;
   height: 0.3em;
   border-radius: 50%;
-  background-color: #fff;
+  background-color: var(--active-color, #fff);
   aspect-ratio: 1 / 1;
   opacity: 0;
   will-change: opacity;
@@ -884,3 +884,6 @@ body { background: transparent; }
 .lyric-main.bright { color: var(--active-color, #fff); }
 .lyric-sub { color: var(--trans-color, rgba(255, 255, 255, 0.95)); }
 .bottom-line > div { color: var(--idle-color, rgba(255, 255, 255, 0.85)); }
+
+
+.lyric-creator { vertical-align: middle; }

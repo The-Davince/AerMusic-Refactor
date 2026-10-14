@@ -1,8 +1,8 @@
-/**
- * AerMusic 播放样式 - 默认主题
- * 纯渲染层: 布局 + 侧边按钮 + 皮肤(style.css). 控制栏/滑块/自动隐藏/状态驱动 归 core (ui/controls.js),
- * 弹窗/建议/模式/歌单处理 归 core (ui/*.js 与 main.min.js)
- */
+
+
+
+
+
 (function() {
     const safeClosest = function(selector) {
         let el = this;
@@ -22,7 +22,7 @@
     }
 })();
 
-// SVGcfg 归 style-core.js, 此处仅为向后兼容做引用
+
 if (!window.SVGcfg) {
     console.warn('[AerTheme] SVGcfg 未找到，请确保 style-core.js 已先加载');
     window.SVGcfg = {};
@@ -59,9 +59,9 @@ window.AerTheme = {
         });
     },
 
-    /**
-     * 渲染播放页面（视觉布局）
-     */
+    
+
+
     renderPage(song, index) {
         const secondaryControls = this.getControlsHtml(song, index);
         const lyricHtml = song.lyricHtml || '';
@@ -99,9 +99,9 @@ window.AerTheme = {
         `;
     },
 
-    /**
-     * 生成侧边控制按钮 HTML（主题特定的视觉布局）
-     */
+    
+
+
     getControlsHtml(song, index) {
         const app = this.getApp();
         const isFav = app && app.isFavoriteSong && app.isFavoriteSong(song.id);
@@ -109,12 +109,11 @@ window.AerTheme = {
         const songId = song ? song.id : '';
         return `
             <div class="secondary-controls">
-                <div class="btn" title="隐藏歌词" onclick="app.toggleLyrics && app.toggleLyrics()">${SVGcfg.dislike}</div>
-                <div class="btn" title="添加到歌单" onclick="app.addCurrentToPlaylist && app.addCurrentToPlaylist()">${SVGcfg.add}</div>
-                <div class="btn heart-btn ${isFav ? 'active' : ''}" data-song-id="${songId}" title="收藏" onclick="app.toggleFavoriteSong(${index})">${SVGcfg.heart}</div>
-                <div class="btn reduce-btn ${isDisliked ? 'active' : ''}" data-song-id="${songId}" title="减少推荐" onclick="app.toggleReduceRecommend(${index})">${SVGcfg.heartOff}</div>
-                <div class="btn" title="下载当前歌曲" onclick="app.downloadCurrent()">${SVGcfg.download}</div>
-                <div class="btn" title="分享" onclick="app.shareSong()">${SVGcfg.share}</div>
+                <div class="btn" data-tooltip="添加到歌单" onclick="app.addCurrentToPlaylist && app.addCurrentToPlaylist()">${SVGcfg.add}</div>
+                <div class="btn heart-btn ${isFav ? 'active' : ''}" data-song-id="${songId}" data-tooltip="收藏" onclick="app.toggleFavoriteSong(${index})">${SVGcfg.heart}</div>
+                <div class="btn reduce-btn ${isDisliked ? 'active' : ''}" data-song-id="${songId}" data-tooltip="减少推荐" onclick="app.toggleReduceRecommend(${index})">${SVGcfg.heartOff}</div>
+                <div class="btn" data-tooltip="下载当前歌曲" onclick="app.downloadCurrent()">${SVGcfg.download}</div>
+                <div class="btn" data-tooltip="分享" onclick="app.shareSong()">${SVGcfg.share}</div>
             </div>
         `;
     },
@@ -126,9 +125,9 @@ window.AerTheme = {
         });
     },
 
-    /**
-     * 渲染完成后的视觉钩子 (控制栏由 core ui/controls.js 创建并绑定)
-     */
+    
+
+
     onRendered(song, index, container) {
         container?.querySelectorAll('[data-artist-id]').forEach(el => {
             el.addEventListener('click', e => {

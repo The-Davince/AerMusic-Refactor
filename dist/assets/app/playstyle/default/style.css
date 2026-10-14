@@ -21,6 +21,7 @@
 
 .title-meta h1 { 
     font-size: 2.9630vh; 
+    font-weight: 600;
     margin-bottom: 0.4630vh; 
     width: 37.0370vh;
     overflow: hidden; 
@@ -89,6 +90,13 @@
 
 #fixed-genius-bar.hidden .genius-progress-container {
     height: 0.5vh;
+    left: 0;
+    width: 100vw;
+}
+
+body.sidebar-visible #fixed-genius-bar.hidden,
+body.sidebar-expanded #fixed-genius-bar.hidden {
+    z-index: 10002;
 }
 
 .genius-progress-fill {
@@ -146,7 +154,7 @@
     left: 50%;
     transition: opacity 1s ease-in-out !important; 
     will-change: transform, opacity;
-   /** transform: translateZ(0); **/
+   
     pointer-events: none;
 }
 
@@ -294,6 +302,11 @@
     flex-direction: column-reverse;
     align-items: center;
     gap: 10px;
+}
+
+body:not(.aer-bar-collapsed) #toast-container {
+    top: auto;
+    bottom: calc(5% + 10vh);
 }
 
 .toast-item {
@@ -548,6 +561,11 @@
     justify-content: space-between;
     padding: 1.2vh 1.5vh;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: grab;
+}
+
+.playlist-header:active {
+    cursor: grabbing;
 }
 
 .playlist-title {

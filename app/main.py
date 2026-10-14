@@ -1,5 +1,6 @@
 import importlib
 import pkgutil
+import re
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from html import escape
@@ -70,14 +71,19 @@ async def server_error_handler(request: Request, exc):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.connect(cfg.DATABASE_PATH)
-    from setup import TABLES
-    for ddl in TABLES:
+    from setup import tables_for, ensure_users
+    for ddl in tables_for(db.storage_backend()):
         db.run(ddl)
+    ensure_users()
     db.run("DELETE FROM sessions WHERE expiresat < ?", (int(time.time()),))
+    if cfg.OIDC_ENABLED:
+        from utils import jwt as jwtx, oidc_store
+        jwtx.init_jwt_keys(cfg.OIDC_KID)
+        await oidc_store.cleanup()
     upstream.init()
     executor = ThreadPoolExecutor(max_workers=cfg.TO_THREAD_WORKERS, thread_name_prefix="tothread")
     asyncio.get_running_loop().set_default_executor(executor)
-    a(f"server started: {cfg.APP_NAME}")
+    a(f"server started: {cfg.APP_NAME} storage={db.storage_backend()}")
     yield
     await upstream.aclose()
     executor.shutdown(wait=False)
@@ -121,6 +127,9 @@ async def favicon_ico():
 
 
 
+SPA_ROUTE_RE = re.compile(r"^(?:index(?:/[^/]+)?|search(?:/[^/]*)?|love|list(?:/[^/]*){0,2}|lyric(?:/[^/]*)?|[^/]+)$")
+
+
 def _resolve_page(full_path: str):
     page_dir = _PAGE_DIR.resolve()
     if not full_path:
@@ -134,6 +143,8 @@ def _resolve_page(full_path: str):
     idx = page_dir / rel / "index.html"
     if idx.is_file() and idx.resolve().is_relative_to(page_dir):
         return idx
+    if SPA_ROUTE_RE.match(rel):
+        return page_dir / "index.html"
     return None
 
 
@@ -145,6 +156,8 @@ def _load_routers():
         mod = importlib.import_module(f"app.handlers.{module_info.name}")
         if hasattr(mod, "router"):
             app.include_router(mod.router, prefix="/api")
+        if hasattr(mod, "wellknown_router"):
+            app.include_router(mod.wellknown_router)
 
 
 _load_routers()

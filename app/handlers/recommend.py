@@ -26,8 +26,12 @@ EVENT_TYPES = {
     "play_start", "play_progress", "play_complete", "play_skip",
     "favorite_add", "favorite_remove", "playlist_add",
     "dislike", "dislike_remove",
+    "search", "view_song", "view_artist", "view_album",
+    "playlist_create", "playlist_update", "playlist_delete", "playlist_play",
 }
 LIBRARY_EVENT_TYPES = {"favorite_add", "favorite_remove", "playlist_add"}
+
+INFO_EVENT_TYPES = {"search", "view_song", "view_artist", "view_album", "playlist_create", "playlist_update", "playlist_delete", "playlist_play"}
 EVENT_MAX_BODY = 64 * 1024
 EVENT_MAX_BATCH = 50
 EVENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
@@ -311,13 +315,14 @@ def _store_edges(userid, edges):
     db.run_many(
         "INSERT INTO recommend_edges(userid,platform,srcid,dstid,weight,updatedat) VALUES(?,?,?,?,?,?) "
         "ON CONFLICT(userid,platform,srcid,dstid) DO UPDATE SET "
-        "weight = MIN(recommend_edges.weight + excluded.weight, 3600), updatedat = excluded.updatedat", rows,
+        "weight = CASE WHEN recommend_edges.weight + excluded.weight > 3600 THEN 3600 "
+        "ELSE recommend_edges.weight + excluded.weight END, updatedat = excluded.updatedat", rows,
     )
     cutoff = now_ms - EVENT_RETENTION_MS
     db.run("DELETE FROM recommend_edges WHERE userid = ? AND updatedat < ?", (userid, cutoff))
     db.run(
-        "DELETE FROM recommend_edges WHERE userid = ? AND rowid NOT IN "
-        "(SELECT rowid FROM recommend_edges WHERE userid = ? ORDER BY updatedat DESC LIMIT ?)",
+        "DELETE FROM recommend_edges WHERE userid = ? AND (updatedat, platform, srcid, dstid) NOT IN "
+        "(SELECT updatedat, platform, srcid, dstid FROM recommend_edges WHERE userid = ? ORDER BY updatedat DESC LIMIT ?)",
         (userid, userid, EDGE_MAX_PER_USER),
     )
 
@@ -472,7 +477,7 @@ def _build_profile(userid):
         song_key = f"{platform}:id:{event['songid']}"
         if event["event"] in ("dislike", "dislike_remove") and song_key not in disliked_state:
             disliked_state[song_key] = event["event"] == "dislike"
-        if event["event"] in LIBRARY_EVENT_TYPES:
+        if event["event"] in LIBRARY_EVENT_TYPES or event["event"] in INFO_EVENT_TYPES:
             continue
         age = max(0, now - int(event.get("createdat") or now))
         score *= math.pow(0.5, age / (30 * 24 * 60 * 60 * 1000))

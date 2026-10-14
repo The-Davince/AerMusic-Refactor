@@ -1,14 +1,39 @@
-/**
- * 无UI模式 / 纯净歌词模式 (从默认主题上移到 core)
- * 状态机 + body class + 侧边工具按钮 + 歌词小卡片, 主题只出 CSS 皮肤
- */
+
+
+
+
 (function() {
     const state = {
         hideUIActive: false,
         onlyLyricsActive: false,
+        olCardOpen: false,
         hideUITimers: { top: null, bottom: null, left: null, right: null }
     };
     let hideUIListener = null;
+    let olZoneBound = false;
+
+    function setOlCardOpen(open) {
+        if (state.olCardOpen === open) return;
+        state.olCardOpen = open;
+        const card = document.getElementById('only-lyrics-card');
+        if (card) card.classList.toggle('ol-open', open);
+    }
+
+    
+    function bindOlCardZone() {
+        if (olZoneBound) return;
+        olZoneBound = true;
+        window.addEventListener('mousemove', (e) => {
+            const app = window.app;
+            if (!state.onlyLyricsActive || !app || app.page !== 'recommend') {
+                setOlCardOpen(false);
+                return;
+            }
+            const xp = (e.clientX / window.innerWidth) * 100;
+            const yp = (e.clientY / window.innerHeight) * 100;
+            setOlCardOpen(yp < 12 && xp >= 30 && xp <= 70);
+        }, { passive: true });
+    }
 
     function esc(value) {
         const app = window.app;
@@ -121,7 +146,7 @@
         if (btn) btn.classList.toggle('active', state.onlyLyricsActive);
 
         if (state.onlyLyricsActive) {
-            /* 记录进入前的歌词隐藏状态, 以便退出时恢复 */
+            
             state._prevLyricsHidden = app?.lyricVisible === false;
             if (app && app.lyricVisible === false) {
                 app.lyricVisible = true;
@@ -133,6 +158,7 @@
             if (notify && app?.showToast) app.showToast("已启用纯净歌词模式");
         } else {
             document.body.classList.remove('only-lyrics-enabled');
+            setOlCardOpen(false);
             if (state._prevLyricsHidden && app) {
                 app.lyricVisible = false;
                 document.querySelectorAll('.song-page').forEach(page => {
@@ -217,16 +243,17 @@
 
         injectButtons();
         injectOlCard();
-        /* 恢复持久化状态(静默, 不弹 toast), 仅用户主动切换时才提示 */
+        bindOlCardZone();
+        
         updateHideUIState(false);
         updateOnlyLyricsState(false);
 
-        /* index.html 静态按钮/ol-card 的内联 onclick 依赖这三个方法 */
+        
         app.toggleHideUI = toggleHideUI;
         app.toggleOnlyLyrics = toggleOnlyLyrics;
         app.searchFromCard = searchFromCard;
 
-        /* 切歌时刷新歌词小卡片 (原主题 play 包装的职责) */
+        
         app.bus.on('play:song', updateOlCard);
 
         return true;

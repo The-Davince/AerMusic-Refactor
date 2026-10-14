@@ -1,7 +1,7 @@
-/**
- * 设置面板渲染 (从 StyleCore 上移到 core 壳层)
- * 样式卡片 / 音源卡片 / 已存样式列表 + GPU/翻译色设置恢复
- */
+
+
+
+
 (function() {
     const styleEsc = (value) => {
         if (window.app && typeof window.app.escapeHtml === 'function') return window.app.escapeHtml(value);
@@ -29,7 +29,7 @@
                         正在加载样式...
                     </div>
                 `;
-                /* 限时重渲, 样式系统加载失败就停在提示, 不无限轮询 */
+                
                 ui._renderRetryCount = (ui._renderRetryCount || 0) + 1;
                 if (ui._renderRetryCount <= 20) setTimeout(() => ui.renderStyleList(), 500);
                 return;
@@ -57,7 +57,7 @@
                             <span style="color:#fff;font-size:1.8vh;font-weight:700;">${styleEsc(iconContent)}</span>
                         </div>
                         <div class="platform-details">
-                            <div class="platform-name">${styleEsc(style.name)} ${isActive ? '✓' : ''}</div>
+                            <div class="platform-name">${styleEsc(style.name)} ${isActive ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" style="vertical-align:-1px;"><path d="M20 6 9 17l-5-5"/></svg>' : ''}</div>
                             <div class="platform-desc">${styleEsc(style.description || '')}</div>
                         </div>
                         ${style.custom ? '<div style="font-size:1vh;background:rgba(255,255,255,0.15);padding:0.2vh 0.6vh;border-radius:0.5vh;color:#fff;">自定义</div>' : ''}
@@ -179,7 +179,7 @@
             ui.renderSavedStyles();
         },
 
-        /* 原 StyleCore.initSettings 的设置恢复部分 */
+        
         restoreSettingsUi() {
             const gpuEnabled = localStorage.getItem('AerMusic_GPUAccel') !== 'false';
             const gpuSwitch = document.getElementById('set-gpu-accel');

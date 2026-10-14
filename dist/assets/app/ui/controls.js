@@ -1,9 +1,9 @@
-/**
- * 播放控制栏 (从默认主题 onRendered 上移到 core)
- * 默认控制栏 markup + data-ctl 行为绑定 + 进度滑块/自动隐藏 + 总线驱动数值槽
- * 主题可通过 renderControlBar(ctx) 提供自定义 markup (约定 data-ctl / 数值槽 id)
- * 旧接口主题 (实现 updateStatus/updateProgress/...) 经 v1 兼容桥继续工作
- */
+
+
+
+
+
+
 (function() {
     let autoHideTimer = null;
     let bound = false;
@@ -17,11 +17,12 @@
     }
     function modeIcon(m) {
         const s = icons();
-        const map = { list: s.listLoop, single: s.singleLoop, random: s.random };
+        const map = { heart: s.heart || s.listLoop, list: s.listLoop, single: s.singleLoop, random: s.random };
         return map[m] || s.listLoop || '';
     }
     function modeLabel(m) {
-        return m === 'single' ? '单曲循环' : (m === 'random' ? '随机' : '列表循环');
+        if (m === 'heart') return '心动模式';
+        return m === 'single' ? '单曲循环' : (m === 'random' ? '随机播放' : '列表循环');
     }
     function fmtTime(t) {
         const a = A();
@@ -43,7 +44,7 @@
         else fill.style.width = (r * 100) + "%";
     }
 
-    /* 默认控制栏 markup (主题 v1 原样, 交互改 data-ctl, 由 core 绑定) */
+    
     function defaultBarHtml() {
         const a = A();
         const loopMode = a?.loopMode || 'list';
@@ -62,29 +63,83 @@
                     <span id="fixed-dur" style="opacity:0.4">0:00</span>
                 </div>
                 <div class="fixed-actions">
-                    <div class="btn mode-btn" data-ctl="mode" title="播放模式">
+                    <div class="btn mode-btn" data-ctl="mode" data-tooltip="播放模式">
                         <span class="mode-icon" id="mode-icon">${modeIcon(loopMode)}</span>
                         <span class="mode-label" id="mode-label">${modeLabel(loopMode)}</span>
                     </div>
-                    <div class="btn" data-ctl="back15" title="后退15秒">${s.backward15}</div>
-                    <div class="btn" data-ctl="prev" title="上一首">${s.prev}</div>
-                    <div class="btn btn-play" data-ctl="play" id="fixed-play-btn" title="播放/暂停">${s.play}</div>
-                    <div class="btn" data-ctl="next" title="下一首">${s.next}</div>
-                    <div class="btn" data-ctl="fwd15" title="前进15秒">${s.forward15}</div>
-                    <div class="btn speed-btn" data-ctl="speed" title="播放速度">
+                    <div class="btn" data-ctl="back15" data-tooltip="后退15秒">${s.backward15}</div>
+                    <div class="btn" data-ctl="prev" data-tooltip="上一首">${s.prev}</div>
+                    <div class="btn btn-play" data-ctl="play" id="fixed-play-btn" data-tooltip="播放/暂停">${s.play}</div>
+                    <div class="btn" data-ctl="next" data-tooltip="下一首">${s.next}</div>
+                    <div class="btn" data-ctl="fwd15" data-tooltip="前进15秒">${s.forward15}</div>
+                    <div class="btn speed-btn" data-ctl="speed" data-tooltip="播放速度">
                         ${s.speed}<span class="speed-label" id="speed-label">${rate}x</span>
                     </div>
-                    <div class="btn volume-btn" data-ctl="volume" title="音量">
+                    <div class="btn volume-btn" data-ctl="volume" data-tooltip="音量">
                         <span class="volume-icon" id="volume-icon">${volIcon(volume)}</span>
                         <span class="volume-label" id="volume-label">${volume}</span>
                     </div>
-                    <div class="btn" data-ctl="list" title="播放列表">${s.playlist}</div>
-                    <div class="btn quality-btn" data-ctl="quality" title="音质">
-                        ${s.quality}<span class="quality-label">${qualityLabel}</span>
+                    <div class="btn" data-ctl="list" data-tooltip="播放列表">${s.playlist}</div>
+                    <div class="btn quality-btn" data-ctl="quality" data-tooltip="音质">
+                        <span class="quality-icon">${(a && a.qualityIcon) ? a.qualityIcon(a.config && a.config.quality) : s.quality}</span><span class="quality-label">${qualityLabel}</span>
                     </div>
                 </div>
             </div>
         `;
+    }
+
+    
+    let barTip = null;
+
+    function ensureBarTip() {
+        if (!barTip || !barTip.isConnected) {
+            barTip = document.getElementById('bar-tooltip') || document.createElement('div');
+            barTip.id = 'bar-tooltip';
+            if (!barTip.isConnected) document.body.appendChild(barTip);
+        }
+        return barTip;
+    }
+
+    function showBarTip(target) {
+        const text = target.getAttribute('data-tooltip');
+        if (!text) return;
+        const tip = ensureBarTip();
+        if (tip.dataset.text !== text) {
+            tip.textContent = text;
+            tip.dataset.text = text;
+        }
+        const r = target.getBoundingClientRect();
+        const tr = tip.getBoundingClientRect();
+        const bar = target.closest ? target.closest('#fixed-genius-bar') : null;
+        const anchorTop = bar ? Math.min(r.top, bar.getBoundingClientRect().top) : r.top;
+        let left = r.left + r.width / 2 - tr.width / 2;
+        left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
+        tip.style.left = Math.round(left) + 'px';
+        tip.style.top = Math.round(anchorTop - tr.height - 8) + 'px';
+        tip.classList.add('show');
+    }
+
+    function hideBarTip() {
+        if (barTip) barTip.classList.remove('show');
+    }
+
+    
+    function bindBarTips(bar) {
+        if (bindBarTips.done) return;
+        bindBarTips.done = true;
+        const isNativeTip = (el) => !!(el && el.closest && (el.closest('.side-tools') || el.closest('.result-actions')));
+        document.addEventListener('mouseover', (e) => {
+            const target = e.target && e.target.closest ? e.target.closest('[data-tooltip]') : null;
+            if (!target) return;
+            if (isNativeTip(target)) { hideBarTip(); return; }
+            showBarTip(target);
+        }, true);
+        document.addEventListener('mouseout', (e) => {
+            const target = e.target && e.target.closest ? e.target.closest('[data-tooltip]') : null;
+            if (target && !isNativeTip(target)) hideBarTip();
+        }, true);
+        window.addEventListener('scroll', hideBarTip, true);
+        window.addEventListener('resize', hideBarTip);
     }
 
     function bindButtons(bar) {
@@ -137,11 +192,15 @@
         bar.onmouseleave = () => resetTimer();
     }
 
-    function showBar() { const bar = document.getElementById('fixed-genius-bar'); if (bar) bar.classList.remove('hidden'); }
-    function hideBar() { const bar = document.getElementById('fixed-genius-bar'); if (bar) bar.classList.add('hidden'); }
+    function syncBarCollapsed() {
+        const bar = document.getElementById('fixed-genius-bar');
+        document.body.classList.toggle('aer-bar-collapsed', !!(bar && bar.classList.contains('hidden')));
+    }
+    function showBar() { const bar = document.getElementById('fixed-genius-bar'); if (bar) bar.classList.remove('hidden'); syncBarCollapsed(); }
+    function hideBar() { const bar = document.getElementById('fixed-genius-bar'); if (bar) bar.classList.add('hidden'); syncBarCollapsed(); }
     function resetTimer() { clearTimeout(autoHideTimer); autoHideTimer = setTimeout(hideBar, 5000); }
 
-    /* 主题未自建控制栏时, core 出默认栏 */
+    
     function ensureBar() {
         if (document.getElementById('fixed-genius-bar')) return;
         const theme = window.AerTheme;
@@ -151,13 +210,14 @@
         bar.innerHTML = html;
         document.body.appendChild(bar);
         bindButtons(bar);
+        bindBarTips(bar);
         bindSlider();
         bindAutoHide();
     }
 
     function setEl(id, fn) { const el = document.getElementById(id); if (el) fn(el); }
 
-    /* 数值槽 + v1 兼容桥 */
+    
     function onStatus(p) {
         setEl('fixed-play-btn', e => e.innerHTML = p.playing ? icons().pause : icons().play);
         const t = window.AerTheme;
@@ -210,6 +270,7 @@
         a.bus.on('play:speed', onSpeed);
         a.bus.on('play:volume', onVolume);
         a.bus.on('play:pitch', onPitch);
+        syncBarCollapsed();
         return true;
     }
 

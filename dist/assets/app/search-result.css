@@ -1,9 +1,6 @@
-/**
- * AerMusic 搜索结果条状样式
- * 类似网易云音乐客户端的搜索结果展示
- */
 
-/* 搜索结果容器 */
+
+
 #search-overlay {
     position: fixed;
     top: 0;
@@ -42,9 +39,10 @@
     pointer-events: none;
 }
 
-/* 平台分类标签栏 */
+
 .platform-tabs {
     display: flex;
+    justify-content: center;
     gap: 1.5vh;
     margin-bottom: 3vh;
     padding: 0 1vh;
@@ -93,7 +91,7 @@
     border-radius: 1vh;
 }
 
-/* 搜索结果网格 - 双栏布局 */
+
 .result-grid-container {
     flex: 1;
     overflow-y: auto;
@@ -112,7 +110,7 @@
     }
 }
 
-/* 单条搜索结果 */
+
 .result-item {
     display: flex;
     align-items: center;
@@ -131,7 +129,7 @@
     border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* 结果条封面 */
+
 .result-cover {
     width: 6vh;
     height: 6vh;
@@ -141,7 +139,7 @@
     box-shadow: 0 0.3vh 1vh rgba(0, 0, 0, 0.3);
 }
 
-/* 结果条信息 */
+
 .result-info {
     flex: 1;
     min-width: 0;
@@ -185,7 +183,7 @@
     flex-shrink: 0;
 }
 
-/* 来源平台标签 */
+
 .result-platform {
     display: flex;
     align-items: center;
@@ -201,7 +199,7 @@
     height: 1.4vh;
 }
 
-/* 悬停操作按钮 */
+
 .result-actions {
     display: flex;
     align-items: center;
@@ -238,7 +236,7 @@
     color: #fff;
 }
 
-/* 无结果提示 */
+
 .no-result {
     display: flex;
     flex-direction: column;
@@ -259,7 +257,7 @@
     font-size: 1.8vh;
 }
 
-/* 加载状态 */
+
 .search-loading {
     display: flex;
     align-items: center;
@@ -286,7 +284,7 @@
     color: rgba(255, 255, 255, 0.6);
 }
 
-/* 搜索结果数量统计 */
+
 .result-stats {
     display: flex;
     align-items: center;
@@ -303,11 +301,12 @@
     font-weight: 600;
 }
 
-/* 搜索类型标签 */
+
 .search-type-tabs {
     display: flex;
+    justify-content: center;
     gap: 0;
-    margin-left: 3vh;
+    margin-left: 0;
     border-bottom: 1px solid rgba(255,255,255,0.1);
     padding-bottom: 0;
 }
@@ -332,7 +331,7 @@
     font-weight: 600;
 }
 
-/* 返回按钮 */
+
 .back-btn {
     display: inline-flex;
     align-items: center;
@@ -351,7 +350,7 @@
     background: rgba(255, 255, 255, 0.15);
 }
 
-/* 返回列表按钮（歌单详情页） */
+
 .back-to-list-btn {
     display: inline-flex;
     align-items: center;
@@ -370,7 +369,7 @@
     background: rgba(255, 255, 255, 0.15);
 }
 
-/* 列表视图样式 */
+
 .result-grid.list-view {
     display: flex !important;
     flex-direction: column !important;
@@ -387,7 +386,7 @@
     gap: 1.2vh 2vw !important;
 }
 
-/* 视图切换按钮 */
+
 .view-toggle-btns {
     display: flex;
     gap: 4px;
@@ -419,7 +418,7 @@
     background: rgba(255,255,255,0.15);
 }
 
-/* 歌手页/专辑页覆盖层 */
+
 .sub-page-overlay {
     position: fixed;
     top: 0;
@@ -443,11 +442,107 @@
     z-index: 1550;
 }
 
-/* 歌手链接/专辑链接样式 */
+
 .artist-link:hover, .album-link:hover {
     color: var(--apple-red, #ff3b30) !important;
 }
 
 @media (hover: none), (pointer: coarse) {
     .result-actions { opacity: 1; pointer-events: auto; }
+}
+
+
+.search-side-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4.4vh;
+    height: 4.4vh;
+    min-width: 34px;
+    min-height: 34px;
+    border-radius: 50%;
+    background: var(--glass-bg, rgba(255, 255, 255, 0.08));
+    backdrop-filter: blur(1vh);
+    -webkit-backdrop-filter: blur(1vh);
+    border: 0.0926vh solid rgba(255, 255, 255, 0.1);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    cursor: pointer;
+    z-index: 6;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.search-side-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+    transform: translateY(-50%) scale(1.06);
+}
+
+#searchBackBtn { left: calc(-1 * (4.4vh + 1.2vh)); }
+#searchClearBtn { right: calc(-1 * (4.4vh + 1.2vh)); }
+body.page-search #searchBackBtn { display: flex; }
+#searchClearBtn.is-visible { display: flex; }
+
+.round-back-btn {
+    position: fixed;
+    top: 1.8519vh;
+    left: 1.8519vh;
+    width: 4.4vh;
+    height: 4.4vh;
+    min-width: 34px;
+    min-height: 34px;
+    border-radius: 50%;
+    background: var(--glass-bg, rgba(255, 255, 255, 0.08));
+    backdrop-filter: blur(1vh);
+    -webkit-backdrop-filter: blur(1vh);
+    border: 0.0926vh solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    cursor: pointer;
+    z-index: 20;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.round-back-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+    transform: scale(1.06);
+}
+
+@media (max-width: 768px) {
+    #searchBackBtn { left: -2vh; }
+    #searchClearBtn { right: -2vh; }
+    .round-back-btn { width: 3.6vh; height: 3.6vh; min-width: 30px; min-height: 30px; }
+    .round-back-btn.lyric-lib-back { height: 5.6vh; min-height: 42px; padding: 0 2vh; }
+}
+
+.lyric-lib-body {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3.2vh;
+}
+
+.lyric-lib-tip {
+    font-size: 1.9vh;
+    color: rgba(255, 255, 255, 0.75);
+    letter-spacing: 0.1em;
+}
+
+.round-back-btn.lyric-lib-back {
+    position: static;
+    width: auto;
+    min-width: 0;
+    height: 6.4vh;
+    min-height: 48px;
+    padding: 0 2.6vh;
+    border-radius: 999px;
+    gap: 0.9vh;
+    font-size: 1.5vh;
+    letter-spacing: 0.05em;
 }

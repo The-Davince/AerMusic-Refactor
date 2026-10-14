@@ -1,8 +1,8 @@
-/**
- * AerMusic 云同步
- * 登录后把收藏/歌单/播放历史存到服务端, 换设备或清浏览器数据不再丢
- * 未登录时一切照旧走 localStorage
- */
+
+
+
+
+
 (function () {
     const KIND_KEYS = {
         favorites: 'AerMusic_Favorites_Songs',
@@ -10,6 +10,8 @@
         history: 'AerMusic_History'
     };
     const SYNC_TS_KEY = 'AerMusic_Sync_Timestamps';
+    const PUSH_INTERVAL_MS = 60000;
+    let lastPushAt = 0;
     const state = { user: null, pushTimer: null, lastPushed: {}, restoring: false, failCount: 0, restoreVersion: 0 };
     const eventState = { queue: [], timer: null, sending: false, version: 0, controller: null, last: Object.create(null), failCount: 0 };
 
@@ -43,6 +45,7 @@
         state.restoring = false;
         state.lastPushed = {};
         writeTS({});
+        lastPushAt = 0;
         state.failCount = 0;
     }
 
@@ -125,10 +128,9 @@
                     eventState.timer = setTimeout(() => flushEvents(), 5000);
                 }
                 if (e.status === 401) {
-                    state.user = null;
+                    setUser(null);
                     resetSyncState();
                     resetRecommendProfile();
-                    renderBox();
                 }
             }
         } finally {
@@ -141,7 +143,7 @@
     }
 
     function recordEvent(event, song, extra) {
-        if (!state.user || !['play_start', 'play_progress', 'play_complete', 'play_skip', 'favorite_add', 'favorite_remove', 'playlist_add', 'dislike', 'dislike_remove'].includes(event)) return;
+        if (!state.user || !['play_start', 'play_progress', 'play_complete', 'play_skip', 'favorite_add', 'favorite_remove', 'playlist_add', 'dislike', 'dislike_remove', 'search', 'view_song', 'view_artist', 'view_album', 'playlist_create', 'playlist_update', 'playlist_delete', 'playlist_play'].includes(event)) return;
         const base = eventSong(song);
         if (!base) return;
         const now = Date.now();
@@ -158,15 +160,84 @@
         } else if (last && now - last.at < 1500) return;
         eventState.last[key] = { at: now, position };
         eventState.queue.push(data);
-        if (eventState.queue.length > 100) eventState.queue.splice(0, eventState.queue.length - 100);
-        if (eventState.queue.length >= 20) flushEvents();
+        if (eventState.queue.length > 150) eventState.queue.splice(0, eventState.queue.length - 150);
+        
+        if (eventState.queue.length >= 40) flushEvents();
         else {
             clearTimeout(eventState.timer);
-            eventState.timer = setTimeout(() => flushEvents(), event === 'play_progress' ? 3000 : 1000);
+            eventState.timer = setTimeout(() => flushEvents(), event === 'play_progress' ? 8000 : 6000);
         }
     }
 
     window.AerMusicRecommendEvents = { record: recordEvent, flush: flushEvents };
+    
+    const authListeners = [];
+    function notifyAuthChanged() {
+        const user = (state && state.user) ? state.user : null;
+        authListeners.forEach((fn) => { try { fn(user); } catch (e) {} });
+    }
+    function setUser(user) {
+        state.user = user || null;
+        notifyAuthChanged();
+    }
+
+    let mePending = null;
+    function fetchMe() {
+        if (mePending) return mePending;
+        mePending = api('GET', '/api/user/me').then((resp) => {
+            setUser(resp.data);
+            return state.user;
+        }).catch((e) => {
+            if (e.status === 401) setUser(null);
+            throw e;
+        }).finally(() => { mePending = null; });
+        return mePending;
+    }
+
+    async function afterAuth(data) {
+        setUser(data);
+        resetSyncState();
+        resetRecommendProfile();
+        await pullAndRestore();
+        return state.user;
+    }
+
+    async function login(username, password) {
+        const resp = await api('POST', '/api/user/login', { username: username, password: password });
+        return afterAuth(resp.data);
+    }
+
+    async function register(payload) {
+        const resp = await api('POST', '/api/user/register', payload);
+        return afterAuth(resp.data);
+    }
+
+    async function logout() {
+        try { await api('POST', '/api/user/logout'); } catch (e) {}
+        setUser(null);
+        resetSyncState();
+        resetRecommendProfile();
+    }
+
+    function updateProfile(profile) { return api('PUT', '/api/user/profile', profile); }
+    function sendEmailCode(email) { return api('POST', '/api/user/email/code', { email: email }); }
+    function uploadAvatar(dataUrl) { return api('POST', '/api/user/avatar', { dataUrl: dataUrl }); }
+
+    window.AerMusicCloud = {
+        getUser: () => (state && state.user) ? state.user : null,
+        onAuthChanged: (fn) => { if (typeof fn === 'function' && authListeners.indexOf(fn) < 0) authListeners.push(fn); },
+        api: api,
+        fetchMe: fetchMe,
+        login: login,
+        register: register,
+        logout: logout,
+        updateProfile: updateProfile,
+        sendEmailCode: sendEmailCode,
+        uploadAvatar: uploadAvatar
+    };
+
+    
+    window.AerMusicCloud.onAuthChanged(() => { try { window.app && window.app._ensurePlaylistIds && window.app._ensurePlaylistIds(); } catch (e) {} });
 
     const edgeState = { queue: [], timer: null, sending: false, version: 0, controller: null, failCount: 0, local: new Map(), last: Object.create(null) };
 
@@ -233,10 +304,9 @@
                     edgeState.timer = setTimeout(() => flushEdges(), 5000);
                 }
                 if (e.status === 401) {
-                    state.user = null;
+                    setUser(null);
                     resetSyncState();
                     resetRecommendProfile();
-                    renderBox();
                 }
             }
         } finally {
@@ -250,7 +320,24 @@
 
     window.AerMusicRecommendEdges = { record: recordEdge, flush: flushEdges, local: edgeState.local };
 
-    /* ---------- 拉取 ---------- */
+    
+    
+    function hotApply(kinds) {
+        const app = window.app;
+        if (!app) return;
+        const read = (key, dft) => { try { const v = JSON.parse(localStorage.getItem(key) || 'null'); return v == null ? dft : v; } catch (e) { return dft; } };
+        if (kinds.indexOf('favorites') >= 0) {
+            app.favoriteSongs = read(KIND_KEYS.favorites, []);
+            try { if (app.refreshAllFavoriteButtons) app.refreshAllFavoriteButtons(); } catch (e) {}
+            try { if (app.page === 'favorites' && app.renderFavoritesPage) app.renderFavoritesPage(); } catch (e) {}
+        }
+        if (kinds.indexOf('playlists') >= 0) {
+            app.userPlaylists = read(KIND_KEYS.playlists, []);
+            try { if (app._ensurePlaylistIds) app._ensurePlaylistIds(); } catch (e) {}
+            try { if (app.page === 'playlists' && app.showPlaylistsList) app.showPlaylistsList(); } catch (e) {}
+        }
+    }
+
     async function pullAndRestore() {
         if (!state.user) return;
         const userId = state.user.userId;
@@ -262,19 +349,20 @@
             const data = resp.data || {};
             const ts = readTS();
             let changed = false;
+            const changedKinds = [];
             Object.keys(KIND_KEYS).forEach((kind) => {
                 const remote = data[kind];
                 if (!remote) return;
                 if (remote.updatedAt === 0 || remote.data === null || remote.data === undefined) {
                     if (remote.updatedAt !== 0 && (ts[kind] || 0) >= remote.updatedAt) return;
-                    // 云端已清空: 移除本地键并记录时间戳, 保持多端一致
+                    
                     localStorage.removeItem(KIND_KEYS[kind]);
                     state.lastPushed[kind] = '';
                 } else {
                     if ((ts[kind] || 0) >= (remote.updatedAt || 0)) return;
                     const raw = JSON.stringify(remote.data);
                     if (localStorage.getItem(KIND_KEYS[kind]) === raw) {
-                        // 内容一致只推进时间戳, 避免多开设备互相触发刷新
+                        
                         ts[kind] = remote.updatedAt;
                         state.lastPushed[kind] = raw;
                         return;
@@ -284,11 +372,12 @@
                 }
                 ts[kind] = remote.updatedAt;
                 changed = true;
+                changedKinds.push(kind);
             });
             writeTS(ts);
             if (changed) {
-                toast('已从云端恢复数据, 即将刷新');
-                setTimeout(() => location.reload(), 800);
+                toast('已从云端恢复数据');
+                hotApply(changedKinds);
             }
         } catch (e) {
             console.warn('[CloudSync] 拉取失败:', e.message);
@@ -299,19 +388,21 @@
         }
     }
 
-    /* ---------- 推送 ---------- */
+    
     function snapshotKind(kind) {
         const raw = localStorage.getItem(KIND_KEYS[kind]);
         return raw === null ? '' : raw;
     }
 
     function schedulePush(kind) {
+        const wait = Math.max(0, PUSH_INTERVAL_MS - (Date.now() - lastPushAt));
         clearTimeout(state.pushTimer);
-        state.pushTimer = setTimeout(() => pushAll(), 2000);
+        state.pushTimer = setTimeout(() => pushAll(), wait);
     }
 
     async function pushAll(opts) {
         if (!state.user || state.restoring) return;
+        lastPushAt = Date.now();
         const userId = state.user.userId;
         const o = opts || {};
         const ts = readTS();
@@ -331,7 +422,7 @@
                     ts[kind] = resp.data.updatedAt;
                     state.failCount = 0;
                 } else {
-                    // 服务端有更新的版本, 本地被拒: 拉取覆盖, 不标记已同步
+                    
                     anyFail = true;
                     await pullAndRestore();
                     return;
@@ -341,10 +432,9 @@
                 state.failCount++;
                 console.warn('[CloudSync] 推送 ' + kind + ' 失败:', e.message);
                 if (e.status === 401) {
-                    state.user = null;
+                    setUser(null);
                     resetSyncState();
                     resetRecommendProfile();
-                    renderBox();
                     return;
                 }
                 if (state.failCount >= 5) { toast('云同步失败次数过多, 已暂停自动同步'); return; }
@@ -370,7 +460,7 @@
         });
     }
 
-    /* ---------- 播放历史 ---------- */
+    
     function recordHistory(song) {
         if (!song || song.id === undefined) return;
         let list = [];
@@ -385,101 +475,14 @@
         localStorage.setItem(KIND_KEYS.history, JSON.stringify(list));
     }
 
-    /* ---------- UI ---------- */
-    function ensureSection() {
-        const overlay = document.getElementById('theme-overlay');
-        if (!overlay || document.getElementById('account-section')) return;
-
-        const section = document.createElement('div');
-        section.className = 'settings-section';
-        section.id = 'account-section';
-
-        const dataSection = Array.from(overlay.querySelectorAll('.settings-section'))
-            .find(s => s.querySelector('.settings-label') && s.querySelector('.settings-label').textContent.indexOf('数据管理') > -1);
-        const label = document.createElement('h3');
-        label.className = 'settings-label';
-        label.textContent = '账号与云同步';
-        section.appendChild(label);
-        const box = document.createElement('div');
-        box.id = 'account-box';
-        box.style.cssText = 'margin-top:1.5vh;';
-        section.appendChild(box);
-
-        if (dataSection) dataSection.parentNode.insertBefore(section, dataSection);
-        else overlay.appendChild(section);
-        renderBox();
-    }
-
-    function renderBox() {
-        const box = document.getElementById('account-box');
-        if (!box) return;
-        if (!state.user) {
-            box.innerHTML = `
-                <div style="display:flex; flex-direction:column; gap:1vh; max-width:300px;">
-                    <div style="font-size:1.25vh; color:rgba(255,255,255,0.55);">登录后收藏/歌单/历史自动云端保存</div>
-                    <input id="acc-user" class="meta-input" placeholder="用户名" autocomplete="username" style="width:100%;">
-                    <input id="acc-pass" class="meta-input" type="password" placeholder="密码" autocomplete="current-password" style="width:100%;">
-                    <div style="display:flex; gap:1vh;">
-                        <div id="acc-login" class="add-style-btn" style="cursor:pointer;text-align:center;flex:1;">登录</div>
-                        <div id="acc-register" class="add-style-btn" style="cursor:pointer;text-align:center;flex:1;background:rgba(255,255,255,0.08);color:#fff;">注册</div>
-                    </div>
-                </div>`;
-            box.querySelector('#acc-login').onclick = () => doAuth('/api/user/login');
-            box.querySelector('#acc-register').onclick = () => doAuth('/api/user/register');
-        } else {
-            const safeName = String(state.user.username).replace(/[^A-Za-z0-9_\u4e00-\u9fa5]/g, '');
-            box.innerHTML = `
-                <div style="display:flex; align-items:center; gap:1.5vh; flex-wrap:wrap;">
-                    <span style="font-size:1.35vh; color:#fff;">已登录: ${safeName}</span>
-                    <div id="acc-sync" class="add-style-btn" style="cursor:pointer;">立即同步</div>
-                    <div id="acc-logout" class="add-style-btn" style="cursor:pointer;background:rgba(255,59,48,0.2);color:#ff3b30;">退出登录</div>
-                </div>
-                <div style="font-size:1.15vh; color:rgba(255,255,255,0.4); margin-top:1vh;">收藏 / 歌单 / 播放历史会自动同步到云端</div>`;
-            box.querySelector('#acc-sync').onclick = async () => { await pushAll(); await pullAndRestore(); toast('同步完成'); };
-            box.querySelector('#acc-logout').onclick = doLogout;
-        }
-    }
-
-    async function doAuth(url) {
-        const box = document.getElementById('account-box');
-        const name = box.querySelector('#acc-user').value.trim();
-        const pass = box.querySelector('#acc-pass').value;
-        if (!name || !pass) { toast('请输入用户名和密码'); return; }
-        try {
-            const resp = await api('POST', url, { username: name, password: pass });
-            state.user = resp.data;
-            resetSyncState();
-            resetRecommendProfile();
-            toast(url.indexOf('register') > -1 ? '注册成功, 已登录' : '登录成功');
-            renderBox();
-            await pullAndRestore();
-        } catch (e) {
-            toast(e.message);
-        }
-    }
-
-    async function doLogout() {
-        try { await api('POST', '/api/user/logout'); } catch (e) {}
-        state.user = null;
-        resetSyncState();
-        resetRecommendProfile();
-        toast('已退出登录');
-        renderBox();
-    }
-
-    /* ---------- 启动 ---------- */
+    
     async function boot() {
-        ensureSection();
-        const settingsBtn = document.getElementById('theme-btn');
-        if (settingsBtn) settingsBtn.addEventListener('click', () => setTimeout(ensureSection, 50));
         try {
-            const resp = await api('GET', '/api/user/me');
-            state.user = resp.data;
-            renderBox();
+            await fetchMe();
             await pullAndRestore();
-        } catch (e) { renderBox(); }
+        } catch (e) {}
         watchLocal();
-        // 等待 app 就绪后挂播放历史记录
+        
         const hookApp = () => {
             if (window.app && !window.app.__cloudSyncHooked) {
                 window.app.__cloudSyncHooked = true;

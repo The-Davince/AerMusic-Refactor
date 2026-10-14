@@ -1,8 +1,12 @@
-/**
- * 搜索建议子系统 (从默认主题上移到 core)
- * 建议弹窗 DOM/事件 + 搜索历史 + getSearchSuggest (经 PlatformCore.features 门控)
- */
+
+
+
+
 (function() {
+    const CLOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1.6vh; height:1.6vh; opacity:0.5; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
+    const SEARCH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1.6vh; height:1.6vh; opacity:0.5; flex-shrink:0;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+    const CROSS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="width:1.6vh; height:1.6vh; flex-shrink:0;"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
+
     function getHistory() {
         try {
             const value = JSON.parse(localStorage.getItem('AerMusic_SearchHistory') || '[]');
@@ -20,9 +24,33 @@
         localStorage.setItem('AerMusic_SearchHistory', JSON.stringify(history));
     }
 
+    
+    function highlightKw(text, key, escape) {
+        const raw = String(text ?? '');
+        const word = String(key ?? '').trim().toLowerCase();
+        const low = raw.toLowerCase();
+        const at = word && low.length === raw.length ? low.indexOf(word) : -1;
+        if (at < 0) return escape(raw);
+        return escape(raw.slice(0, at)) + '<span class="suggest-hl">' + escape(raw.slice(at, at + word.length)) + '</span>' + escape(raw.slice(at + word.length));
+    }
+
+    function matchHistory(kw, history) {
+        const word = kw.toLowerCase();
+        const hit = [];
+        history.forEach((item, idx) => {
+            const low = item.toLowerCase();
+            if (low === word) return;
+            const at = low.indexOf(word);
+            if (at < 0) return;
+            hit.push({ kw: item, level: at === 0 ? 0 : 1, idx });
+        });
+        return hit.sort((a, b) => a.level - b.level || a.idx - b.idx).slice(0, 2).map(h => h.kw);
+    }
+
     let popup = null;
     let showSuggest = null;
     let hideSuggest = null;
+    let fetchSeq = 0;
 
     function ensurePopup() {
         if (popup) return;
@@ -52,6 +80,37 @@
             }, 180);
         };
         document.addEventListener('click', (e) => { if (!container.contains(e.target)) hideSuggest(); });
+        popup.addEventListener('mousedown', (e) => {
+            if (e.target && e.target.closest && e.target.closest('.suggest-item')) e.preventDefault();
+        });
+    }
+
+    function makeTermItem(app, kw, key, icon, withDel) {
+        const item = document.createElement('div');
+        item.className = 'suggest-item';
+        item.innerHTML = `
+            ${icon}
+            <span class="name" style="flex:1;" title="${app.escapeHtml(kw)}">${highlightKw(kw, key, app.escapeHtml)}</span>
+            ${withDel ? `<span class="suggest-del" data-del-hist>${CROSS_ICON}</span>` : ''}
+        `;
+        if (withDel) {
+            item.querySelector('[data-del-hist]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const left = getHistory().filter(x => x !== kw);
+                localStorage.setItem('AerMusic_SearchHistory', JSON.stringify(left));
+                item.remove();
+                if (popup && !popup.querySelector('.suggest-item')) hideSuggest();
+            });
+        }
+        item.onclick = (e) => {
+            if (e.target.closest('[data-del-hist]')) return;
+            e.stopPropagation();
+            hideSuggest();
+            document.getElementById('searchInp').value = kw;
+            addToHistory(kw);
+            app.search(kw);
+        };
+        return item;
     }
 
     function renderHistory(app) {
@@ -71,43 +130,20 @@
             localStorage.removeItem('AerMusic_SearchHistory');
             hideSuggest();
         };
-        history.forEach(kw => {
-            const item = document.createElement('div');
-            item.className = 'suggest-item';
-            item.innerHTML = `
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1.6vh; height:1.6vh; opacity:0.5; flex-shrink:0;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                <span class="name" style="flex:1;" title="${app.escapeHtml(kw)}">${app.escapeHtml(kw)}</span>
-                <span data-del-hist style="cursor:pointer;opacity:0.3;font-size:12px;padding:2px 6px;">✕</span>
-            `;
-            item.querySelector('[data-del-hist]').addEventListener('click', (e) => {
-                e.stopPropagation();
-                const h = getHistory().filter(x => x !== kw);
-                localStorage.setItem('AerMusic_SearchHistory', JSON.stringify(h));
-                item.remove();
-            });
-            item.onclick = (e) => {
-                if (e.target.closest('[data-del-hist]')) return;
-                e.stopPropagation();
-                hideSuggest();
-                document.getElementById('searchInp').value = kw;
-                addToHistory(kw);
-                app.search(kw);
-            };
-            popup.appendChild(item);
-        });
+        history.forEach(kw => popup.appendChild(makeTermItem(app, kw, '', CLOCK_ICON, true)));
         showSuggest();
     }
 
-    function renderSuggestions(app, result) {
+    function renderSuggestions(app, kw, result) {
         ensurePopup();
         if (!popup) return;
         popup.innerHTML = '';
-        const { songs, albums, order } = result;
-        if (!order || order.length === 0) { hideSuggest(); return; }
-        let hasData = false;
+        popup.appendChild(makeTermItem(app, kw, kw, SEARCH_ICON, false));
+        matchHistory(kw, getHistory()).forEach(h => popup.appendChild(makeTermItem(app, h, kw, CLOCK_ICON, true)));
+        const { songs, artists, albums } = result || {};
+        const order = result && Array.isArray(result.order) ? result.order : [];
         order.forEach(type => {
             if (type === 'songs' && songs && songs.length > 0) {
-                hasData = true;
                 const title = document.createElement('div');
                 title.className = 'suggest-title';
                 title.textContent = '单曲建议';
@@ -118,15 +154,30 @@
                     item.className = 'suggest-item';
                     item.innerHTML = `
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1.6vh; height:1.6vh; opacity:0.5; flex-shrink:0;"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-                        <span class="name" title="${app.escapeHtml(song.name)}">${app.escapeHtml(song.name)}</span>
+                        <span class="name" title="${app.escapeHtml(song.name)}">${highlightKw(song.name, kw, app.escapeHtml)}</span>
                         <span class="artist" title="${app.escapeHtml(artist)}">${app.escapeHtml(artist)}</span>
                     `;
                     item.onclick = (e) => { e.stopPropagation(); hideSuggest(); document.getElementById('searchInp').value = song.name; app.playSuggestSong(song); };
                     popup.appendChild(item);
                 });
             }
+            if (type === 'artists' && artists && artists.length > 0) {
+                const title = document.createElement('div');
+                title.className = 'suggest-title';
+                title.textContent = '歌手建议';
+                popup.appendChild(title);
+                artists.forEach(artist => {
+                    const item = document.createElement('div');
+                    item.className = 'suggest-item';
+                    item.innerHTML = `
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1.6vh; height:1.6vh; opacity:0.5; flex-shrink:0;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        <span class="name" title="${app.escapeHtml(artist.name)}">${highlightKw(artist.name, kw, app.escapeHtml)}</span>
+                    `;
+                    item.onclick = (e) => { e.stopPropagation(); hideSuggest(); document.getElementById('searchInp').value = artist.name; app.openArtistPage(artist.id); };
+                    popup.appendChild(item);
+                });
+            }
             if (type === 'albums' && albums && albums.length > 0) {
-                hasData = true;
                 const title = document.createElement('div');
                 title.className = 'suggest-title';
                 title.textContent = '专集 / 歌单';
@@ -137,7 +188,7 @@
                     item.className = 'suggest-item';
                     item.innerHTML = `
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1.6vh; height:1.6vh; opacity:0.5; flex-shrink:0;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="12" cy="12" r="3"/></svg>
-                        <span class="name" title="${app.escapeHtml(album.name)}">${app.escapeHtml(album.name)}</span>
+                        <span class="name" title="${app.escapeHtml(album.name)}">${highlightKw(album.name, kw, app.escapeHtml)}</span>
                         <span class="artist" title="${app.escapeHtml(artist)}">${app.escapeHtml(artist)}</span>
                     `;
                     item.onclick = (e) => { e.stopPropagation(); hideSuggest(); document.getElementById('searchInp').value = album.name; app.loadSuggestAlbum(album.id, album.name); };
@@ -145,20 +196,29 @@
                 });
             }
         });
-        if (hasData) showSuggest();
-        else hideSuggest();
+        const words = result && Array.isArray(result.keywords) ? result.keywords : [];
+        const lower = kw.toLowerCase();
+        const wordList = words.filter(word => typeof word === 'string' && word.trim() && word.trim().toLowerCase() !== lower);
+        if (wordList.length > 0) {
+            const title = document.createElement('div');
+            title.className = 'suggest-title';
+            title.textContent = '词条建议';
+            popup.appendChild(title);
+            wordList.forEach(word => popup.appendChild(makeTermItem(app, word.trim(), kw, SEARCH_ICON, false)));
+        }
+        showSuggest();
     }
 
     async function fetchSuggest(app, query) {
         const kw = String(query ?? '').trim();
+        const seq = ++fetchSeq;
         if (!kw) { renderHistory(app); return; }
         try {
-            /* 请求走上游原始词, HTML 转义只在渲染结果时做 */
             const platformId = window.PlatformCore ? window.PlatformCore.getDefaultPlatform() : 'cloudmusic';
             const result = await window.PlatformCore.getSearchSuggest(platformId, kw);
-            if (result) renderSuggestions(app, result);
-            else hideSuggest();
-        } catch (e) { hideSuggest(); }
+            if (seq !== fetchSeq) return;
+            renderSuggestions(app, kw, result);
+        } catch (e) { if (seq === fetchSeq) renderSuggestions(app, kw, null); }
     }
 
     function apply() {
@@ -179,10 +239,11 @@
             clearTimeout(fetchTimer);
             fetchTimer = setTimeout(() => fetchSuggest(app, val), 250);
         };
-        searchInp.onfocus = () => {
-            if (searchInp.value.trim() !== '') fetchSuggest(app, searchInp.value);
-            else renderHistory(app);
-        };
+        searchInp.onfocus = () => fetchSuggest(app, searchInp.value);
+        searchInp.addEventListener('blur', () => {
+            ensurePopup();
+            if (hideSuggest) hideSuggest();
+        });
         return true;
     }
 

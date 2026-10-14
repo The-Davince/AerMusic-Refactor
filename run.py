@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 import os
 import subprocess
 import sys
@@ -69,8 +69,9 @@ def main():
 
     _stage(3, 4, "初始化数据库表结构 (setup.py)")
     from setup import main as setup_main
+    from utils import db
     setup_main()
-    print("  OK  数据库初始化完成")
+    print(f"  OK  数据库初始化完成 (storage={db.storage_backend()})")
 
     _stage(4, 4, "启动 HTTP 服务")
     print(f"  uvicorn app.main:app  host={cfg.HOST}  port={cfg.PORT}")

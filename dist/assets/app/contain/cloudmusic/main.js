@@ -262,6 +262,20 @@ const CloudMusicPlatform = {
         return (base || String(song?.id || '')) + '#' + this._songArtistNames(song).join('|');
     },
 
+    
+    _hotness(song) {
+        const pop = Math.max(0, Number(song?.popularity ?? song?.pop ?? 0));
+        const plays = Math.max(0, Number(song?.playCount ?? song?.pc ?? 0));
+        let score = Math.min(0.3, pop / 100 * 0.3);
+        if (plays > 0) score += Math.min(0.2, Math.log10(plays + 1) / 8 * 0.2);
+        return score;
+    },
+
+    _isRipOff(song) {
+        const text = (String(song?.name || '') + ' ' + String(song?.alia || '')).toLowerCase();
+        return /翻唱|翻录|盗版|dj版|抖音版/.test(text);
+    },
+
     _isInstrumental(song) {
         const text = (String(song?.name || '') + ' ' + String(song?.alia || '')).toLowerCase();
         return /伴奏|纯音乐|纯享|卡拉\s*ok|karaoke|instrumental/.test(text);
@@ -321,8 +335,8 @@ const CloudMusicPlatform = {
             const albumId = this._songId(song?.al?.id || song?.album?.id || song?.albumId);
             const albumKey = albumId ? `${song?.platform || this.INFO.ID}:id:${albumId}` : '';
             const recentCount = artistIds.reduce((max, artistId) => Math.max(max, signals.recentArtists.get(artistId) || 0), 0);
-            const popularity = Number(song.popularity ?? song.pop ?? 0);
-            let score = Math.min(0.1, Math.max(0, popularity) / 1000);
+            let score = this._hotness(song);
+            if (this._isRipOff(song)) score -= 0.35;
             if (this._isInstrumental(song)) score -= 1.2;
             if (signals.favoriteIds.has(id) || signals.favoriteIds.has(this._songKey(song))) score += 1.2;
             if (artistIds.some(artistId => signals.likedArtists.has(artistId))) score += 0.8;
@@ -502,7 +516,7 @@ const CloudMusicPlatform = {
         }
     },
 
-    // ========== 核心方法 ==========
+    
 
     async search(keyword, options = {}) {
         const limit = options.limit || 100;
@@ -552,7 +566,7 @@ const CloudMusicPlatform = {
         }
     },
 
-    // ========== 歌词 ==========
+    
 
     async getLyric(songId) {
         try {
@@ -642,7 +656,7 @@ const CloudMusicPlatform = {
         }
     },
 
-    // ========== 推荐（优先读取后端预注入数据） ==========
+    
 
     async getRecommend() {
         const profilePromise = this._startRecommendProfile();
@@ -666,7 +680,7 @@ const CloudMusicPlatform = {
         return this._buildDailyQueue(songs);
     },
 
-    // ========== 相似歌曲（多源混合） ==========
+    
 
     async getSimilar(songId) {
         const detail = await this.getSongDetail(songId);
@@ -703,8 +717,8 @@ const CloudMusicPlatform = {
         const candidates = [...candidateMap.values()].map(candidate => {
             const recentCount = candidate.artistIds.reduce((max, id) => Math.max(max, signals.recentArtists.get(id) || 0), 0);
             const liked = candidate.artistIds.some(id => signals.likedArtists.has(id));
-            const popularity = Number(candidate.song.popularity ?? candidate.song.pop ?? 0);
             let score = candidate.sourceWeight + (candidate.sources.has('similar') ? 0.34 : 0);
+            if (this._isRipOff(candidate.song)) score -= 0.35;
             if (this._isInstrumental(candidate.song)) score -= 1.2;
             if (candidate.artistIds.some(id => id === `${this.INFO.ID}:id:${artistId}`)) score += 0.18;
             if (liked) score += 0.24;
@@ -714,7 +728,7 @@ const CloudMusicPlatform = {
             score += this._behaviorScore(signals.behaviorArtists, candidate.artistIds, 4) * 0.1;
             score += this._behaviorScore(signals.behaviorAlbums, [candidate.albumId ? `${candidate.song?.platform || this.INFO.ID}:id:${candidate.albumId}` : ''], 4) * 0.08;
             score += this._edgeBoost(signals, [this._songKey(candidate.song), candidate.id], 0.3);
-            score += Math.min(0.1, Math.max(0, popularity) / 1000);
+            score += this._hotness(candidate.song);
             score += Math.min(0.08, (candidate.sources.size - 1) * 0.04);
             score -= Math.min(0.42, recentCount * 0.14);
             return { ...candidate, score };
@@ -808,7 +822,7 @@ const CloudMusicPlatform = {
         return this._shuffle(songs);
     },
 
-    // ========== 其他接口 ==========
+    
 
     async getArtistDetail(artistId) {
         try {
@@ -840,8 +854,15 @@ const CloudMusicPlatform = {
 
     async getSearchSuggest(keyword) {
         try {
-            const res = await axios.get(this.INFO.API.searchSuggest, { params: { keywords: keyword } });
-            return res.data.code === 200 && res.data.result ? res.data.result : null;
+            
+            const [res, mobileRes] = await Promise.all([
+                axios.get(this.INFO.API.searchSuggest, { params: { keywords: keyword } }),
+                axios.get(this.INFO.API.searchSuggest, { params: { keywords: keyword, type: 'mobile' } }).catch(() => null)
+            ]);
+            if (res.data.code !== 200 || !res.data.result) return null;
+            const allMatch = mobileRes && mobileRes.data && mobileRes.data.result ? mobileRes.data.result.allMatch : null;
+            res.data.result.keywords = Array.isArray(allMatch) ? allMatch.map(item => item && item.keyword).filter(word => typeof word === 'string' && word.trim()) : [];
+            return res.data.result;
         } catch (e) { console.error('[CloudMusic] 获取搜索建议失败:', e); return null; }
     },
 

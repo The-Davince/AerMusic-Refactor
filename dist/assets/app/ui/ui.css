@@ -1,4 +1,4 @@
-/* 系统UI与模式样式 (从默认主题 injectCustomStyles 上移到 core) */
+
             #initial-loader {
                 z-index: 11000 !important;
             }
@@ -7,13 +7,13 @@
                 opacity: 0 !important;
                 pointer-events: none !important;
             }
-            /* 搜索页时搜索框应该显示，只有设置页时才隐藏 */
+            
             body.settings-active .search-container {
                 opacity: 0 !important;
                 pointer-events: none !important;
                 visibility: hidden !important;
             }
-            /* 搜索页时确保搜索框可见 */
+            
             body.search-active .search-container {
                 opacity: 1 !important;
                 pointer-events: auto !important;
@@ -25,7 +25,7 @@
                 background: transparent !important;
                 transition: opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1) !important;
             }
-            /* 只显示歌词模式下，鼠标移过标题区域渐显标题 */
+            
             body.only-lyrics-enabled.page-recommend #top-bar #app-logo {
                 opacity: 0 !important;
                 pointer-events: none !important;
@@ -38,7 +38,7 @@
                 opacity: 1 !important;
                 pointer-events: auto !important;
             }
-            /* 只显示歌词模式下，鼠标移过搜索框区域渐显搜索框 */
+            
             body.only-lyrics-enabled.page-recommend .search-container {
                 opacity: 0 !important;
                 pointer-events: none !important;
@@ -76,6 +76,9 @@
             body.ui-hide-enabled #sys-sidebar {
                 opacity: 0;
                 pointer-events: none;
+            }
+            body.ui-hide-enabled #top-bar,
+            body.ui-hide-enabled #fixed-genius-bar {
                 transition: opacity 0.5s cubic-bezier(0.25, 1, 0.5, 1) !important;
             }
             body.ui-hide-enabled #top-bar.ui-visible,
@@ -115,7 +118,7 @@
                 display: none;
             }
             body.only-lyrics-enabled.page-recommend .only-lyrics-card-trigger {
-                display: block;
+                display: none !important;
             }
             .only-lyrics-card {
                 position: fixed;
@@ -140,7 +143,7 @@
             body.only-lyrics-enabled.page-recommend .only-lyrics-card {
                 display: flex;
             }
-            body.only-lyrics-enabled.page-recommend .only-lyrics-card-trigger:hover + .only-lyrics-card,
+            body.only-lyrics-enabled.page-recommend .only-lyrics-card.ol-open,
             body.only-lyrics-enabled.page-recommend .only-lyrics-card:hover {
                 opacity: 1 !important;
                 pointer-events: auto !important;
@@ -344,7 +347,7 @@
                 opacity: 1 !important;
                 transition: opacity 0.3s ease 0.1s !important;
             }
-            /* 底部留白防止控制栏遮挡 */
+            
             #search-overlay .result-grid-container,
             #favorites-overlay .result-grid-container,
             #playlists-overlay .result-grid-container {
@@ -370,7 +373,7 @@
                 position: relative;
                 overflow: visible !important;
             }
-            /* 侧边栏高亮平滑过渡 */
+            
             .sidebar-menu {
                 position: relative;
             }
@@ -378,7 +381,7 @@
                 position: relative;
                 transition: background 0.3s ease, color 0.3s ease !important;
             }
-            /* 搜索分类标签平滑过渡 */
+            
             .platform-tab {
                 transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1) !important;
             }
@@ -414,10 +417,14 @@
                 font-size: 11px;
                 color: rgba(255, 255, 255, 0.35);
                 padding: 6px 12px 2px 12px;
-                font-family: "MiSans Semibold";
+                font-family: 'MiSans', sans-serif;
+                font-weight: 600;
                 text-transform: uppercase;
                 text-align: left;
                 pointer-events: none;
+            }
+            .suggest-title [data-clear-history] {
+                pointer-events: auto;
             }
             .suggest-item {
                 display: flex;
@@ -449,3 +456,57 @@
                 margin-left: auto;
                 max-width: 100px;
             }
+            .suggest-item .suggest-hl {
+                color: var(--apple-red, #24c8fa);
+            }
+            .suggest-item .suggest-del {
+                margin-left: auto;
+                font-size: 12px;
+                padding: 2px 6px;
+                opacity: 0.3;
+                cursor: pointer;
+                border-radius: 6px;
+                transition: color 0.15s ease, opacity 0.15s ease, background-color 0.15s ease;
+            }
+            .suggest-item .suggest-del:hover {
+                color: var(--apple-red, #24c8fa);
+                opacity: 1;
+                background-color: rgba(255, 255, 255, 0.12);
+            }
+
+            
+            .quality-btn .quality-icon {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .quality-btn .quality-icon svg {
+                display: block;
+            }
+            
+            
+            #bar-tooltip {
+                position: fixed;
+                z-index: 200002;
+                padding: 6px 12px;
+                border-radius: 8px;
+                background: rgba(18, 18, 18, 0.82);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: #ffffff;
+                font-size: 1.3vh;
+                font-weight: 500;
+                white-space: nowrap;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+                opacity: 0;
+                transform: translateY(8px);
+                transition: opacity 0.25s cubic-bezier(0.25, 1, 0.5, 1), transform 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+                pointer-events: none;
+            }
+            #bar-tooltip.show {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            

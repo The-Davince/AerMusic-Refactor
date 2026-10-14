@@ -1,7 +1,7 @@
-/**
- * 弹窗系统 (从默认主题上移到 core)
- * app.showAppleModal / app.closeAppleModal
- */
+
+
+
+
 (function() {
     function apply() {
         const app = window.app;
@@ -23,20 +23,16 @@
 
             modal = document.createElement('div');
             modal.id = 'apple-music-modal';
-            modal.style.cssText = `
-                position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
-                backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-                display: flex; align-items: center; justify-content: center;
-                z-index: 200003; opacity: 0; transition: opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1);
-            `;
+            modal.className = 'aer-modal-overlay';
+            modal.style.cssText = `opacity: 0; transition: opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1);`;
             modal.innerHTML = `
-                <div style="background: rgba(28, 28, 30, 0.88); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 20px; box-shadow: 0 24px 64px rgba(0,0,0,0.55); width: ${width}; max-width: ${maxWidth}; padding: 24px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1); max-height: 80vh; overflow-y: auto;" id="apple-modal-panel">
-                    <div style="font-size: 18px; font-weight: bold; color: #fff; text-align: center; font-family: 'MiSans Semibold';">${title}</div>
-                    <div style="color: rgba(255, 255, 255, 0.85); font-size: 14px; text-align: left;" id="apple-modal-body">${contentHtml}</div>
+                <div class="aer-modal-card" id="apple-modal-panel" style="width: ${width}; max-width: ${maxWidth};">
+                    <div class="aer-modal-title" style="font-size: 18px;">${title}</div>
+                    <div class="aer-modal-text" id="apple-modal-body" style="font-size: 14px; text-align: left;">${contentHtml}</div>
                     ${hideFooter ? '' : `
-                    <div style="display: flex; gap: 12px; margin-top: 10px;">
-                        <button id="apple-modal-cancel" style="flex: 1; background: rgba(255, 255, 255, 0.08); color: #fff; font-weight: bold; padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.04); cursor: pointer; transition: background 0.2s; font-size: 14px;">${cancelText}</button>
-                        <button id="apple-modal-confirm" style="flex: 1; background: var(--apple-red, #24c8fa); color: #fff; font-weight: bold; padding: 12px; border-radius: 12px; border: none; cursor: pointer; transition: opacity 0.2s; font-size: 14px;">${confirmText}</button>
+                    <div class="aer-modal-actions" style="margin-top: 10px;">
+                        <button id="apple-modal-cancel" class="aer-modal-btn ghost" style="font-size: 14px;">${cancelText}</button>
+                        <button id="apple-modal-confirm" class="aer-modal-btn accent" style="font-size: 14px;">${confirmText}</button>
                     </div>`}
                 </div>
             `;
