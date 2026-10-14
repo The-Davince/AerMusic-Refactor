@@ -318,12 +318,14 @@
           this.alpha = 0;
           this.pixels = pixels;
           this.texture = this._createTexture(pixels);
+          if (this.onCoverReady) this.onCoverReady(pixels);
           return;
         }
         
         this.fadeFrom = this.pixels ? new Uint8Array(this.pixels) : new Uint8Array(pixels);
         this.fadeTo = pixels;
         this.fadeElapsed = 0;
+        if (this.onCoverReady) this.onCoverReady(pixels);
       };
       img.onerror = () => { if (this.onCoverError) this.onCoverError(url); };
       img.src = url;
