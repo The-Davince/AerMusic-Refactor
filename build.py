@@ -9,6 +9,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent
 
@@ -161,9 +162,35 @@ def _apply_assets_manifest(text: str, ref_map: dict) -> str:
     return ASSETS_PLACEHOLDER_RE.sub(payload, text, count=1)
 
 
+_INTERNAL_NET_RE = re.compile(r"^(?:localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(?:1[6-9]|2\d|3[01])\.)")
+
+
+def _is_internal_base(url: str) -> bool:
+    host = (urlparse(url).hostname or "").strip().lower()
+    if not host:
+        return False
+    if host == "::1" or host == "localhost" or host.endswith(".local") or host.endswith(".internal"):
+        return True
+    if _INTERNAL_NET_RE.match(host):
+        return True
+    return "." not in host
+
+
 def _apply_upstream(text: str) -> str:
     """把 env 配置的上游地址写进 window.__AER_UPSTREAM__ 占位, 覆盖非geturl接口的前端直连地址"""
-    payload = json.dumps({"apiBase": cfg.NETEASE_API_BASE, "lyricBase": cfg.NETEASE_LYRIC_BASE})
+    api_base = cfg.NETEASE_API_BASE
+    lyric_base = cfg.NETEASE_LYRIC_BASE
+    internal = _is_internal_base(api_base) or _is_internal_base(lyric_base)
+    if _is_internal_base(api_base):
+        api_base = "/api/up"
+    if _is_internal_base(lyric_base):
+        lyric_base = "/api/upl"
+    payload = json.dumps({
+        "apiBase": api_base,
+        "lyricBase": lyric_base,
+        "internalUpstream": internal,
+        "internalRecommend": bool(cfg.INTERNAL_RECOMMEND),
+    })
     return UPSTREAM_PLACEHOLDER_RE.sub(payload, text, count=1)
 
 

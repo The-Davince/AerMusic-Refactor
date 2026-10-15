@@ -113,3 +113,33 @@ def _post_process(name: str, data) -> None:
         u = data.get("url")
         if isinstance(u, str) and u.startswith("http://"):
             data["url"] = "https://" + u[len("http://"):]
+
+
+async def api_get(path: str, params: dict, ttl: int = 0, base: str = "") -> dict:
+    # 后端自己的上游调用(代理端点/推荐引擎), 复用同一个 httpx 客户端与进程内缓存
+    if _client is None:
+        init()
+    url = (base or cfg.NETEASE_API_BASE).rstrip("/")
+    if path:
+        url += "/" + path.strip("/")
+    key = "api|" + url + "|" + urlencode(sorted((k, str(v)) for k, v in params.items()))
+    if ttl > 0:
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
+    t0 = time.time()
+    try:
+        resp = await _client.get(url, params=params)
+    except (httpx.TimeoutException, httpx.TransportError) as e:
+        log_ext("netease", "GET", url, status=0, resp_body=f"{type(e).__name__}: {e}", elapsed_ms=(time.time() - t0) * 1000)
+        raise UpstreamError("上游API请求失败")
+    log_ext("netease", "GET", url, status=resp.status_code, elapsed_ms=(time.time() - t0) * 1000)
+    if resp.status_code >= 400:
+        raise UpstreamError("上游API请求失败", 502)
+    try:
+        data = resp.json()
+    except ValueError:
+        raise UpstreamError("上游响应不是合法JSON")
+    if ttl > 0 and isinstance(data, (dict, list)):
+        cache.put(key, data, ttl)
+    return data

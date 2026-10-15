@@ -1,6 +1,8 @@
 import asyncio
 import json
 import math
+import random
+import re
 import threading
 import time
 from collections import defaultdict, deque
@@ -9,9 +11,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from app.handlers.auth import currentUser, readJsonBody
-from utils import db
-from utils.log import get_log_id
-from utils.rate_limit import allow_redis
+from utils import db, upstream
+from utils.log import get_log_id, _get_real_ip
+from utils.rate_limit import allow_local, allow_redis
 
 router = APIRouter()
 
@@ -607,3 +609,507 @@ async def postEdges(req: Request):
     except Exception:
         return _resp(req, 500, "边保存失败", 500)
     return _resp(req, 0, "ok", data={"accepted": len(edges), "rejected": rejected})
+
+
+# ===== 后端推荐引擎: 前端 getSimilar/日推的服务端版, 供 /recommend/get 使用 =====
+
+RECOMMEND_PLATFORM = "cloudmusic"
+RECOMMEND_LIMIT_DEFAULT = 5
+RECOMMEND_LIMIT_MAX = 20
+RECOMMEND_MAX_PER_MIN = 150
+RECOMMEND_SOURCE_TTL = 300
+RECOMMEND_DETAIL_TTL = 600
+RECOMMEND_POOL = 24
+RECOMMEND_DETAIL_MAX = 20
+RECOMMEND_SOURCE_WEIGHTS = {
+    "similar": 1.0,
+    "artist": 0.72,
+    "new": 0.42,
+    "similarArtist": 0.64,
+    "similarPlaylist": 0.6,
+    "hotPlaylist": 0.5,
+}
+RECOMMEND_RIP_OFF_RE = re.compile(r"翻唱|翻录|盗版|dj版|抖音版")
+RECOMMEND_INSTRUMENTAL_RE = re.compile(r"伴奏|纯音乐|纯享|卡拉\s*ok|karaoke|instrumental")
+RECOMMEND_VARIANT_BRACKET_RE = re.compile(
+    r"\s*[（(][^（）()]*\s*(伴奏|纯音乐|纯享|instrumental|卡拉|karaoke|live|remix|remaster|master|钢琴版|吉他版|弦乐版|高音版|低音版|粤语|国语|翻唱|官方)[^（）()]*\s*[)）]\s*")
+RECOMMEND_VARIANT_TAIL_RE = re.compile(
+    r"\s*(伴奏|纯音乐|纯享版|instrumental|卡拉\s*ok|karaoke|live\s*版?|remix|remaster[a-z]*|钢琴版|吉他版|弦乐版|高音版|低音版|粤语|国语|翻唱|官方)\s*$")
+RECOMMEND_VARIANT_YEAR_RE = re.compile(r"\s*\d{4}\s*(版|年度)?\s*$")
+
+
+def _numeric_id(value):
+    text = str(value if value is not None else "").strip()
+    return text if text.isdigit() and len(text) <= 15 else ""
+
+
+def _list_of(data, *keys):
+    if not isinstance(data, dict):
+        return []
+    for scope in (data, data.get("data")):
+        if not isinstance(scope, dict):
+            continue
+        for key in keys:
+            value = scope.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+async def _up(path, params, ttl=RECOMMEND_SOURCE_TTL):
+    try:
+        return await upstream.api_get(path, params, ttl=ttl)
+    except Exception:
+        return None
+
+
+async def _tracks_of_playlists(playlists):
+    if not playlists:
+        return []
+    picked = random.sample(playlists, min(2, len(playlists)))
+    results = await asyncio.gather(
+        *[_up("playlist/track/all", {"id": _numeric_id(item.get("id")), "limit": 30}) for item in picked if _numeric_id(item.get("id"))],
+        return_exceptions=True)
+    songs = []
+    for result in results:
+        songs.extend(_list_of(result, "songs"))
+    return songs
+
+
+async def _source_similar(song_id):
+    return _list_of(await _up("simi/song", {"id": song_id}), "songs")
+
+
+async def _source_artist_top(artist_id):
+    if not artist_id:
+        return []
+    return _list_of(await _up("artist/top/song", {"id": artist_id}), "songs")
+
+
+async def _source_new_songs():
+    items = _list_of(await _up("personalized/newsong", {"limit": 30}), "result")
+    return [item["song"] if isinstance(item.get("song"), dict) else item for item in items]
+
+
+async def _source_similar_artist(artist_id):
+    if not artist_id:
+        return []
+    artists = _list_of(await _up("simi/artist", {"id": artist_id}), "artists")
+    picked = random.sample(artists, min(2, len(artists))) if artists else []
+    results = await asyncio.gather(
+        *[_source_artist_top(_numeric_id(artist.get("id"))) for artist in picked],
+        return_exceptions=True)
+    songs = []
+    for result in results:
+        if isinstance(result, list):
+            songs.extend(result)
+    return songs
+
+
+async def _source_hot_playlist():
+    data = await _up("top/playlist", {"cat": "华语", "limit": 20, "order": "hot"}, ttl=RECOMMEND_DETAIL_TTL)
+    return await _tracks_of_playlists(_list_of(data, "playlists"))
+
+
+async def _gather_sources(seed_id, artist_id):
+    jobs = [("new", _source_new_songs())]
+    if seed_id:
+        jobs.append(("similar", _source_similar(seed_id)))
+        jobs.append(("similarPlaylist", _tracks_of_playlists(_list_of(await _up("simi/playlist", {"id": seed_id}), "playlists"))))
+    else:
+        jobs.append(("hotPlaylist", _source_hot_playlist()))
+    if artist_id:
+        jobs.append(("artist", _source_artist_top(artist_id)))
+        jobs.append(("similarArtist", _source_similar_artist(artist_id)))
+    names = [name for name, _ in jobs]
+    results = await asyncio.gather(*[job for _, job in jobs], return_exceptions=True)
+    out = []
+    for name, result in zip(names, results):
+        out.append((name, result if isinstance(result, list) else []))
+    return out
+
+
+def _key_of(item):
+    platform = _text(item.get("platform"), 40) or RECOMMEND_PLATFORM
+    value = (_id(item.get("id")), _text(item.get("name"), MAX_TEXT))
+    return platform + ":" + _signal_key(value)
+
+
+def _song_keys(song):
+    song_id = _numeric_id(_first_value(song, "id", "songId"))
+    if not song_id:
+        return []
+    return [song_id, f"{RECOMMEND_PLATFORM}:id:{song_id}"]
+
+
+def _artist_keys(song):
+    keys = []
+    for artist_id, name in _artist_values(song):
+        if artist_id != "":
+            keys.append(f"{RECOMMEND_PLATFORM}:id:{artist_id}")
+        if name:
+            keys.append(f"{RECOMMEND_PLATFORM}:name:{name.casefold()}")
+    return keys
+
+
+def _album_keys(song):
+    album_id, name = _album_value(song)
+    keys = []
+    if album_id != "":
+        keys.append(f"{RECOMMEND_PLATFORM}:id:{album_id}")
+    if name:
+        keys.append(f"{RECOMMEND_PLATFORM}:name:{name.casefold()}")
+    return keys
+
+
+def _score_map(items):
+    result = {}
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            score = float(item.get("score") or 0)
+        except (TypeError, ValueError):
+            score = 0.0
+        result[_key_of(item)] = score
+    return result
+
+
+def _recommend_signals(profile):
+    profile = profile if isinstance(profile, dict) else {}
+    favorites = profile.get("favorites") if isinstance(profile.get("favorites"), dict) else {}
+    behavior = profile.get("behavior") if isinstance(profile.get("behavior"), dict) else {}
+    graph = profile.get("graph") if isinstance(profile.get("graph"), dict) else {}
+    played = {str(value) for value in (profile.get("recentKeys") or [])}
+    played.update(str(value) for value in (profile.get("recentIds") or []))
+    disliked = {str(value) for value in (behavior.get("dislikedKeys") or [])}
+    disliked.update(str(value) for value in (behavior.get("dislikedIds") or []))
+    favorite = {str(value) for value in (favorites.get("keys") or [])}
+    favorite.update(str(value) for value in (favorites.get("ids") or []))
+    behavior_songs = {}
+    for item in (behavior.get("songs") or []):
+        if not isinstance(item, dict):
+            continue
+        key = _text(item.get("key"), MAX_ID)
+        if key:
+            behavior_songs[key] = float(item.get("score") or 0)
+    edges = defaultdict(dict)
+    for edge in (graph.get("edges") or []):
+        if not isinstance(edge, dict):
+            continue
+        dst = _numeric_id(edge.get("dst"))
+        src = _text(edge.get("src"), MAX_ID)
+        if not dst or not src:
+            continue
+        platform = _text(edge.get("platform"), 40) or RECOMMEND_PLATFORM
+        weight = float(edge.get("weight") or 0)
+        key = f"{platform}:id:{dst}"
+        if weight > edges[key].get(src, 0):
+            edges[key][src] = weight
+    return {
+        "played": played,
+        "disliked": disliked,
+        "favorite": favorite,
+        "liked_artists": {_key_of(item) for item in (profile.get("likedArtists") or []) if isinstance(item, dict)},
+        "favorite_albums": {_key_of(item) for item in (profile.get("albums") or []) if isinstance(item, dict)},
+        "behavior_songs": behavior_songs,
+        "behavior_artists": _score_map(behavior.get("artists")),
+        "behavior_albums": _score_map(behavior.get("albums")),
+        "edges": edges,
+        "recent_src": {str(value) for value in (profile.get("recentKeys") or [])},
+        "recent_artists": {},
+    }
+
+
+def _song_text(song):
+    alias = song.get("alia")
+    parts = [str(song.get("name") or "")]
+    if isinstance(alias, list):
+        parts.extend(str(item) for item in alias)
+    return " ".join(parts).casefold()
+
+
+def _hotness(song):
+    try:
+        pop = max(0.0, float(song.get("pop") or song.get("popularity") or 0))
+    except (TypeError, ValueError):
+        pop = 0.0
+    try:
+        plays = max(0.0, float(song.get("playCount") or song.get("pc") or 0))
+    except (TypeError, ValueError):
+        plays = 0.0
+    score = min(0.3, pop / 100 * 0.3)
+    if plays > 0:
+        score += min(0.2, math.log10(plays + 1) / 8 * 0.2)
+    return score
+
+
+def _behavior_score(scores, keys, limit):
+    raw = 0.0
+    for key in keys:
+        value = scores.get(key) or 0
+        if value > raw:
+            raw = float(value)
+    scaled = raw if raw < 0 else math.log2(1 + raw)
+    return max(-limit, min(limit, scaled))
+
+
+def _edge_boost(signals, keys, cap):
+    boost = 0.0
+    for key in keys:
+        for src, weight in (signals["edges"].get(key) or {}).items():
+            if src.startswith("kw:") or src in signals["recent_src"]:
+                boost = max(boost, min(cap, weight / 240))
+    return boost
+
+
+def _variant_key(song):
+    base = re.sub(r"\s+", " ", RECOMMEND_VARIANT_YEAR_RE.sub("", RECOMMEND_VARIANT_TAIL_RE.sub(
+        "", RECOMMEND_VARIANT_BRACKET_RE.sub("", str(song.get("name") or "").strip().casefold())))).strip()
+    names = sorted({name.casefold() for _, name in _artist_values(song) if name})
+    return (base or _numeric_id(song.get("id"))) + "#" + "|".join(names)
+
+
+def _collapse_variants(items):
+    seen = set()
+    result = []
+    for item in items:
+        key = _variant_key(item["song"])
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _pick_diverse(items, limit):
+    picked, deferred = [], []
+    artist_counts, album_counts = defaultdict(int), defaultdict(int)
+
+    def bump(item):
+        for artist_id in item["artists"]:
+            artist_counts[artist_id] += 1
+        for album_id in item["albums"]:
+            album_counts[album_id] += 1
+
+    def over_cap(item):
+        if any(artist_counts.get(artist_id, 0) >= 2 for artist_id in item["artists"]):
+            return True
+        return any(album_counts.get(album_id, 0) >= 2 for album_id in item["albums"])
+
+    for item in items:
+        if over_cap(item):
+            deferred.append(item)
+        else:
+            picked.append(item)
+            bump(item)
+    result = picked[:limit]
+    for item in deferred:
+        if len(result) >= limit:
+            break
+        if not over_cap(item):
+            result.append(item)
+            bump(item)
+    if len(result) < limit:
+        for item in deferred:
+            if len(result) >= limit:
+                break
+            if item not in result:
+                result.append(item)
+    return result[:limit]
+
+
+def _rank_candidates(sources, signals, seed_artist_keys, recent_artists):
+    candidates = {}
+    for name, songs in sources:
+        weight = RECOMMEND_SOURCE_WEIGHTS.get(name, 0.5)
+        for song in songs:
+            keys = _song_keys(song)
+            if not keys:
+                continue
+            if any(key in signals["played"] or key in signals["disliked"] for key in keys):
+                continue
+            entry = candidates.get(keys[0])
+            if entry is None:
+                entry = {"song": song, "id": keys[0], "sources": set(), "weight": 0,
+                         "artists": _artist_keys(song), "albums": _album_keys(song)}
+                candidates[keys[0]] = entry
+            entry["sources"].add(name)
+            entry["weight"] = max(entry["weight"], weight)
+    items = []
+    for entry in candidates.values():
+        song = entry["song"]
+        text = _song_text(song)
+        score = entry["weight"] + (0.34 if "similar" in entry["sources"] else 0)
+        if RECOMMEND_RIP_OFF_RE.search(text):
+            score -= 0.35
+        if RECOMMEND_INSTRUMENTAL_RE.search(text):
+            score -= 1.2
+        if seed_artist_keys and any(key in seed_artist_keys for key in entry["artists"]):
+            score += 0.18
+        if any(key in signals["liked_artists"] for key in entry["artists"]):
+            score += 0.24
+        if any(key in signals["favorite"] for key in _song_keys(song)):
+            score += 0.3
+        if any(key in signals["favorite_albums"] for key in entry["albums"]):
+            score += 0.16
+        score += _behavior_score(signals["behavior_songs"], [f"{RECOMMEND_PLATFORM}:id:{entry['id']}"], 4) * 0.16
+        score += _behavior_score(signals["behavior_artists"], entry["artists"], 4) * 0.1
+        score += _behavior_score(signals["behavior_albums"], entry["albums"], 4) * 0.08
+        score += _edge_boost(signals, _song_keys(song), 0.3)
+        score += _hotness(song)
+        score += min(0.08, (len(entry["sources"]) - 1) * 0.04)
+        recent = max([recent_artists.get(key, 0) for key in entry["artists"]] or [0])
+        score -= min(0.42, recent * 0.14)
+        entry["score"] = score
+        items.append(entry)
+    random.shuffle(items)
+    items.sort(key=lambda item: item["score"], reverse=True)
+    items = _collapse_variants(items)
+    direct = _pick_diverse([item for item in items if "similar" in item["sources"]], 19)
+    explore = _pick_diverse([item for item in items if "similar" not in item["sources"]], 8)
+    selected = []
+    direct_index = explore_index = 0
+    while len(selected) < RECOMMEND_POOL and (direct_index < len(direct) or explore_index < len(explore)):
+        for _ in range(2):
+            if direct_index < len(direct) and len(selected) < RECOMMEND_POOL:
+                selected.append(direct[direct_index])
+                direct_index += 1
+        if explore_index < len(explore) and len(selected) < RECOMMEND_POOL:
+            selected.append(explore[explore_index])
+            explore_index += 1
+        if direct_index >= len(direct):
+            while explore_index < len(explore) and len(selected) < RECOMMEND_POOL:
+                selected.append(explore[explore_index])
+                explore_index += 1
+    pool = _pick_diverse(selected, RECOMMEND_POOL)
+    head = pool[:8]
+    random.shuffle(head)
+    return head + pool[8:]
+
+
+def _out_song(song):
+    album_raw = _first_value(song, "al", "album")
+    album = album_raw if isinstance(album_raw, dict) else {}
+    try:
+        duration = int(float(song.get("dt") or song.get("duration") or 0))
+    except (TypeError, ValueError):
+        duration = 0
+    try:
+        pop = int(float(song.get("pop") or song.get("popularity") or 0))
+    except (TypeError, ValueError):
+        pop = 0
+    return {
+        "id": _numeric_id(_first_value(song, "id", "songId")),
+        "name": str(song.get("name") or "")[:MAX_TEXT],
+        "ar": [{"id": artist_id, "name": name} for artist_id, name in _artist_values(song)],
+        "al": {
+            "id": _numeric_id(album.get("id")) or _numeric_id(_first_value(song, "albumId")),
+            "name": str(album.get("name") or "")[:MAX_TEXT],
+            "picUrl": str(album.get("picUrl") or "")[:500],
+        },
+        "dt": duration,
+        "pop": pop,
+        "platform": RECOMMEND_PLATFORM,
+    }
+
+
+def _needs_detail(song):
+    if not song.get("name") or not _artist_values(song):
+        return True
+    album_raw = _first_value(song, "al", "album")
+    album = album_raw if isinstance(album_raw, dict) else {}
+    if not str(album.get("picUrl") or ""):
+        return True
+    return not (song.get("dt") or song.get("duration"))
+
+
+async def _enrich_details(picks):
+    if not picks:
+        return picks
+    missing = [item for item in picks if _needs_detail(item["song"])]
+    ids = [_numeric_id(item["song"].get("id")) for item in missing[:RECOMMEND_DETAIL_MAX]]
+    ids = [value for value in ids if value]
+    if not ids:
+        return picks
+    data = await _up("song/detail", {"ids": ",".join(ids)}, ttl=RECOMMEND_DETAIL_TTL)
+    detail = {str(item.get("id")): item for item in _list_of(data, "songs")}
+    for item in picks:
+        full = detail.get(str(item["id"]))
+        if not full:
+            continue
+        merged = dict(full)
+        for key, value in item["song"].items():
+            if value not in (None, "", [], {}):
+                merged.setdefault(key, value)
+        item["song"] = merged
+    return picks
+
+
+async def _recent_artist_counts(profile):
+    ids = [_numeric_id(value) for value in (profile.get("recentIds") or [])][:8]
+    ids = [value for value in ids if value]
+    if not ids:
+        return {}
+    data = await _up("song/detail", {"ids": ",".join(ids)}, ttl=RECOMMEND_DETAIL_TTL)
+    counts = {}
+    for song in _list_of(data, "songs"):
+        for key in _artist_keys(song):
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _pick_seed(profile):
+    for value in (profile.get("recentIds") or []):
+        song_id = _numeric_id(value)
+        if song_id:
+            return song_id
+    favorites = profile.get("favorites") if isinstance(profile.get("favorites"), dict) else {}
+    ids = [_numeric_id(value) for value in (favorites.get("ids") or [])]
+    ids = [value for value in ids if value]
+    return random.choice(ids) if ids else ""
+
+
+async def _seed_artist_id(seed_id):
+    if not seed_id:
+        return ""
+    data = await _up("song/detail", {"ids": seed_id}, ttl=RECOMMEND_DETAIL_TTL)
+    songs = _list_of(data, "songs")
+    if not songs:
+        return ""
+    artists = _artist_values(songs[0])
+    return str(artists[0][0]) if artists and artists[0][0] != "" else ""
+
+
+@router.get("/recommend/get")
+async def getRecommend(req: Request):
+    log_id = get_log_id(req)
+    if not allow_local("recget|" + _get_real_ip(req), RECOMMEND_MAX_PER_MIN, 60):
+        return _resp(req, 429, "请求过于频繁", 429)
+    try:
+        limit = int(req.query_params.get("limit") or RECOMMEND_LIMIT_DEFAULT)
+    except ValueError:
+        limit = RECOMMEND_LIMIT_DEFAULT
+    limit = max(1, min(RECOMMEND_LIMIT_MAX, limit))
+    user = currentUser(req)
+    profile = await asyncio.to_thread(_build_profile, user["id"]) if user else {}
+    seed_id = _numeric_id(req.query_params.get("seed")) or _pick_seed(profile)
+    signals = _recommend_signals(profile)
+    if seed_id:
+        signals["played"].update(_song_keys({"id": seed_id}))
+    artist_id = await _seed_artist_id(seed_id)
+    sources, recent_artists = await asyncio.gather(
+        _gather_sources(seed_id, artist_id),
+        _recent_artist_counts(profile),
+    )
+    signals["recent_artists"] = recent_artists
+    seed_artist_keys = [f"{RECOMMEND_PLATFORM}:id:{artist_id}"] if artist_id else []
+    ranked = _rank_candidates(sources, signals, seed_artist_keys, recent_artists)
+    picks = await _enrich_details(ranked[:limit])
+    return _resp(req, 0, "ok", data={
+        "songs": [_out_song(item["song"]) for item in picks],
+        "seed": seed_id,
+        "personalized": bool(user),
+        "sources": {name: len(songs) for name, songs in sources},
+        "logId": log_id,
+    })

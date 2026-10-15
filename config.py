@@ -38,6 +38,12 @@ UPSTREAM_RETRIES = int(os.environ.get("UPSTREAM_RETRIES", "2"))
 UPSTREAM_MAX_CONNECTIONS = int(os.environ.get("UPSTREAM_MAX_CONNECTIONS", "300"))
 UPSTREAM_MAX_KEEPALIVE = int(os.environ.get("UPSTREAM_MAX_KEEPALIVE", "100"))
 
+# 上游与本站同机/内网时前端改走 /api/up 代理, 这个是代理端点进程内缓存的秒数(0=不缓存)
+UP_PROXY_TTL = max(0, int(os.environ.get("UP_PROXY_TTL", "120")))
+
+# true 时前端取推荐直接走 /api/recommend/get(后端结合画像实时算), 不再走前端推荐逻辑
+INTERNAL_RECOMMEND = os.environ.get("INTERNAL_RECOMMEND", "false").strip().lower() == "true"
+
 TO_THREAD_WORKERS = int(os.environ.get("TO_THREAD_WORKERS", "64"))
 
 

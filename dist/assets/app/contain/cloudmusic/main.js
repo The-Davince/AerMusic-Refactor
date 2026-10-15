@@ -178,7 +178,8 @@ const CloudMusicPlatform = {
             });
         } catch (e) {}
         const recentArtists = new Map();
-        if (!this._heartbeat.recommendProfilePromise) {
+        const remoteFavs = Array.isArray(favoriteValues) ? favoriteValues : [];
+        if (remoteFavs.length === 0) {
             const localFavorites = Array.isArray(app.favoriteSongs) ? app.favoriteSongs : [];
             localFavorites.forEach(item => {
                 const song = item?.rawSong && typeof item.rawSong === 'object' ? item.rawSong : item;
@@ -445,15 +446,17 @@ const CloudMusicPlatform = {
         return seeds;
     },
 
-    async _buildDailyQueue(songs) {
-        const daily = this._rankDailySongs(songs);
+    async getRecommendMore(dailySongs) {
+        if (this.useInternalRecommend()) return [];
+        const base = Array.isArray(dailySongs) ? dailySongs : [];
         const signals = this._recommendSignals();
-        const usedKeys = new Set(daily.map(song => this._songKey(song) || this._songId(song)).filter(Boolean));
+        const usedKeys = new Set(base.map(song => this._songKey(song) || this._songId(song)).filter(Boolean));
         const seeds = this._pickSeedSongs(usedKeys, signals);
-        if (!seeds.length) return daily;
+        if (!seeds.length) return [];
         const similarResults = await Promise.allSettled(seeds.map(seed => this._getSimilarSongs(this._songId(seed))));
-        const similarMap = new Map();
+        const more = [];
         seeds.forEach((seed, index) => {
+            more.push(seed);
             const result = similarResults[index];
             if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return;
             const seedArtistId = this._artistIds(seed)[0] || '';
@@ -480,20 +483,9 @@ const CloudMusicPlatform = {
                 usedKeys.add(key);
                 picks.push(song);
             });
-            if (picks.length) similarMap.set(this._songId(seed), picks);
+            picks.forEach(song => more.push(song));
         });
-        const queue = [];
-        let dailyIndex = 0;
-        let seedIndex = 0;
-        while (dailyIndex < daily.length || seedIndex < seeds.length) {
-            for (let i = 0; i < 4 && dailyIndex < daily.length; i++) queue.push(daily[dailyIndex++]);
-            if (seedIndex < seeds.length) {
-                const seed = seeds[seedIndex++];
-                queue.push(seed);
-                (similarMap.get(this._songId(seed)) || []).forEach(song => queue.push(song));
-            }
-        }
-        return queue;
+        return more;
     },
 
     _dedup(songs) {
@@ -536,14 +528,38 @@ const CloudMusicPlatform = {
     },
 
     async getSongDetail(songId) {
+        const songs = await this.getSongDetails([songId]);
+        return songs[0] || null;
+    },
+
+    async getSongDetails(ids) {
+        const list = (Array.isArray(ids) ? ids : [ids]).map(id => this._songId(id)).filter(Boolean);
+        if (!list.length) return [];
         try {
             const res = await axios.get(this.INFO.API.detail, {
-                params: { ids: songId }
+                params: { ids: list.join(',') }
             });
-            return this._extractList(res.data, 'songs')[0] || null;
+            return this._extractList(res.data, 'songs');
         } catch (e) {
             console.error('[CloudMusic] 获取详情失败:', e);
-            return null;
+            return [];
+        }
+    },
+
+    useInternalRecommend() {
+        return !!__AER_UPSTREAM__.internalRecommend;
+    },
+
+    async getRecommendByProfile(seedId, limit = 5) {
+        try {
+            const params = { limit };
+            if (seedId) params.seed = seedId;
+            const res = await axios.get('/api/recommend/get', { params });
+            const songs = res.data && res.data.data ? res.data.data.songs : null;
+            return Array.isArray(songs) ? songs : [];
+        } catch (e) {
+            console.error('[CloudMusic] 获取推荐失败:', e);
+            return [];
         }
     },
 
@@ -659,7 +675,11 @@ const CloudMusicPlatform = {
     
 
     async getRecommend() {
-        const profilePromise = this._startRecommendProfile();
+        if (this.useInternalRecommend()) {
+            const songs = await this.getRecommendByProfile('', 9);
+            if (songs.length > 0) return songs;
+        }
+        this._startRecommendProfile();
         let songs = null;
         const prefetched = window.__INITIAL_DATA__?.recommend;
         if (prefetched && prefetched.length > 0) {
@@ -676,8 +696,7 @@ const CloudMusicPlatform = {
                 return [];
             }
         }
-        if (profilePromise) await profilePromise;
-        return this._buildDailyQueue(songs);
+        return this._rankDailySongs(songs);
     },
 
     
@@ -686,7 +705,7 @@ const CloudMusicPlatform = {
         const detail = await this.getSongDetail(songId);
         const artistId = detail?.ar?.[0]?.id;
         this._heartbeat.seedArtistId = artistId;
-        const profilePromise = this._startRecommendProfile();
+        this._startRecommendProfile();
 
         const sources = [
             { id: 'similar', weight: 1, load: () => this._getSimilarSongs(songId) },
@@ -696,7 +715,6 @@ const CloudMusicPlatform = {
             { id: 'similarPlaylist', weight: 0.6, load: () => this._getSimilarPlaylistSongs(songId) },
         ];
         const results = await Promise.allSettled(sources.map(source => source.load()));
-        if (profilePromise) await profilePromise;
         const signals = this._recommendSignals();
         const candidateMap = new Map();
         results.forEach((result, index) => {
