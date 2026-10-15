@@ -376,6 +376,8 @@ body {
   height: 82vh;
   margin: 0 auto;
   overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14%, #000 86%, transparent 100%);
   font-size: calc(2.5rem * var(--lyric-scale, 1));
   touch-action: pan-x;
   -webkit-touch-callout: none;
