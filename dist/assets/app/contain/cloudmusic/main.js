@@ -219,6 +219,7 @@ const CloudMusicPlatform = {
         const behaviorArtists = new Map();
         const behaviorAlbums = new Map();
         const behaviorDisliked = new Map();
+        const behaviorDislikedTags = new Map();
         const addBehavior = (bucket, key, value, weight) => {
             if (!key || !Number.isFinite(weight)) return;
             const current = bucket.get(key) || { ...value, score: 0, count: 0 };
@@ -265,11 +266,24 @@ const CloudMusicPlatform = {
                     const albumKey = albumId ? `${platform}:id:${albumId}` : `${platform}:name:${albumName.toLowerCase()}`;
                     addBehavior(behaviorAlbums, albumKey, { id: albumId, name: albumName, platform }, score);
                 }
-                if (event === 'dislike' || event === 'dislike_remove') behaviorDisliked.set(songKey, event === 'dislike');
+                if (event === 'dislike' || event === 'dislike_remove') {
+                    behaviorDisliked.set(songKey, event === 'dislike');
+                    if (event === 'dislike') {
+                        const tags = Array.isArray(item.tags) ? item.tags.filter(tag => typeof tag === 'string' && /^(tag|genre|category):/.test(tag)).slice(0, 16) : [];
+                        behaviorDislikedTags.set(songKey, tags);
+                    } else {
+                        behaviorDislikedTags.delete(songKey);
+                    }
+                }
             });
         } catch (e) {}
         const sortBehavior = values => [...values.values()].sort((a, b) => b.score - a.score || b.count - a.count).slice(0, 32);
         const behaviorDislikedKeys = [...behaviorDisliked].filter(item => item[1]).map(item => item[0]).filter(key => /^[^:]{1,40}:id:\d{1,15}$/.test(key));
+        const dislikedTags = new Map();
+        [...behaviorDisliked].filter(item => item[1]).forEach(([songKey]) => {
+            const platform = songKey.split(':id:')[0] || this.INFO.ID;
+            (behaviorDislikedTags.get(songKey) || []).forEach(tag => dislikedTags.set(`${platform}:${tag}`, { id: tag, name: tag, platform, score: -4, count: 1 }));
+        });
         dislikedKeys = [...new Set(dislikedKeys.concat(behaviorDislikedKeys))].slice(-100);
         const dislikedIds = dislikedKeys.filter(key => key.startsWith(`${this.INFO.ID}:id:`)).map(key => key.split(':id:')[1]);
         return {
@@ -281,7 +295,7 @@ const CloudMusicPlatform = {
             favoriteAlbums: favoriteAlbums.slice(0, 40),
             playlistSongs: playlistSongs.map(compactSong).filter(Boolean).slice(0, 40),
             historySongs: historySongs.map(compactSong).filter(Boolean).slice(0, 30),
-            behavior: { dislikedIds, dislikedKeys, songs: sortBehavior(behaviorSongs), artists: sortBehavior(behaviorArtists), albums: sortBehavior(behaviorAlbums) },
+            behavior: { dislikedIds, dislikedKeys, dislikedTags: [...dislikedTags.values()], songs: sortBehavior(behaviorSongs), artists: sortBehavior(behaviorArtists), albums: sortBehavior(behaviorAlbums) },
         };
     },
 
@@ -316,6 +330,11 @@ const CloudMusicPlatform = {
             const id = this._songId(item);
             const name = typeof item?.name === 'string' ? item.name.trim().toLowerCase() : '';
             return [[id ? `${platform}:id:${id}` : '', Number(item?.score) || 0], [name ? `${platform}:name:${name}` : '', Number(item?.score) || 0]].filter(value => value[0]);
+        }));
+        const dislikedTags = new Map((Array.isArray(behavior.dislikedTags) ? behavior.dislikedTags : []).flatMap(item => {
+            const platform = item?.platform || this.INFO.ID;
+            const tag = typeof item?.id === 'string' ? item.id : (typeof item?.name === 'string' ? item.name.trim().toLowerCase() : '');
+            return tag ? [[`${platform}:${tag}`, Number(item?.score) || 0]] : [];
         }));
         const dislikedIds = new Set();
         (Array.isArray(behavior.dislikedKeys) ? behavior.dislikedKeys : []).forEach(key => {
@@ -377,7 +396,7 @@ const CloudMusicPlatform = {
             if (!entry || !(entry.srcs instanceof Map)) return;
             entry.srcs.forEach((weight, src) => addEdge(dstKey, src, weight));
         });
-        return { playedIds, favoriteIds: favoriteSongIds, favoriteAlbums, likedArtists, recentArtists, behaviorSongs, behaviorArtists, behaviorAlbums, dislikedIds, recentSrcIds, edgeTargets };
+        return { playedIds, favoriteIds: favoriteSongIds, favoriteAlbums, likedArtists, recentArtists, behaviorSongs, behaviorArtists, behaviorAlbums, dislikedTags, dislikedIds, recentSrcIds, edgeTargets };
     },
 
     _behaviorScore(scores, keys, limit) {
@@ -408,6 +427,29 @@ const CloudMusicPlatform = {
         const artists = Array.isArray(song?.ar) ? song.ar : (Array.isArray(song?.artists) ? song.artists : []);
         const names = artists.map(a => (typeof a === 'string' ? a : a?.name)).filter(Boolean).map(n => String(n).trim().toLowerCase());
         return [...new Set(names)].sort();
+    },
+
+    _songTagKeys(song) {
+        const platform = song?.platform || this.INFO.ID;
+        const values = [];
+        const add = (value, prefix, depth = 0) => {
+            if (depth > 4) return;
+            if (Array.isArray(value)) return value.forEach(item => add(item, prefix, depth + 1));
+            if (typeof value !== 'string') return;
+            value.split(/[,，、|]/).forEach(item => {
+                const text = item.trim().toLowerCase();
+                if (!text) return;
+                const key = /^(tag|genre|category):/.test(text) ? text : `${prefix}:${text}`;
+                if (!values.includes(key)) values.push(key);
+            });
+        };
+        add(song?.tags, 'tag');
+        add(song?.tag, 'tag');
+        add(song?.genre, 'genre');
+        add(song?.genres, 'genre');
+        add(song?.category, 'category');
+        add(song?.categories, 'category');
+        return values.slice(0, 16).map(tag => `${platform}:${tag}`);
     },
 
     _variantKey(song) {
@@ -502,6 +544,7 @@ const CloudMusicPlatform = {
             score += this._behaviorScore(signals.behaviorSongs, [this._songKey(song)], 4) * 0.2;
             score += this._behaviorScore(signals.behaviorArtists, artistIds, 4) * 0.12;
             score += this._behaviorScore(signals.behaviorAlbums, [albumKey], 4) * 0.1;
+            score += this._behaviorScore(signals.dislikedTags, this._songTagKeys(song), 4) * 0.1;
             score += this._edgeBoost(signals, [this._songKey(song), id], 0.5);
             score -= Math.min(0.36, recentCount * 0.12);
             return { song, artistIds, albumId: albumKey, score };
@@ -921,6 +964,7 @@ const CloudMusicPlatform = {
             score += this._behaviorScore(signals.behaviorSongs, [this._songKey(candidate.song)], 4) * 0.16;
             score += this._behaviorScore(signals.behaviorArtists, candidate.artistIds, 4) * 0.1;
             score += this._behaviorScore(signals.behaviorAlbums, [candidate.albumId ? `${candidate.song?.platform || this.INFO.ID}:id:${candidate.albumId}` : ''], 4) * 0.08;
+            score += this._behaviorScore(signals.dislikedTags, this._songTagKeys(candidate.song), 4) * 0.1;
             score += this._edgeBoost(signals, [this._songKey(candidate.song), candidate.id], 0.3);
             score += this._hotness(candidate.song);
             score += Math.min(0.08, (candidate.sources.size - 1) * 0.04);

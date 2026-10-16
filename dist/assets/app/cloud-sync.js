@@ -13,8 +13,9 @@
     const LOCAL_BEHAVIOR_KEY = 'AerMusic_Recommend_Behavior';
     const LOCAL_EVENT_TYPES = new Set(['play_start', 'play_progress', 'play_complete', 'play_skip', 'favorite_add', 'favorite_remove', 'playlist_add', 'dislike', 'dislike_remove']);
     const PUSH_INTERVAL_MS = 60000;
+    const EVENT_PUSH_DELAY_MS = 10000;
     let lastPushAt = 0;
-    const state = { user: null, pushTimer: null, lastPushed: {}, restoring: false, failCount: 0, restoreVersion: 0 };
+    const state = { user: null, pushTimer: null, favoriteTimer: null, favoriteChanges: [], favoriteSending: false, favoriteVersion: 0, favoriteController: null, favoriteFailCount: 0, lastPushed: {}, restoring: false, failCount: 0, restoreVersion: 0 };
     const eventState = { queue: [], timer: null, sending: false, version: 0, controller: null, last: Object.create(null), failCount: 0 };
 
     function readTS() {
@@ -24,6 +25,14 @@
     function resetSyncState() {
         clearTimeout(state.pushTimer);
         state.pushTimer = null;
+        clearTimeout(state.favoriteTimer);
+        state.favoriteTimer = null;
+        if (state.favoriteController) state.favoriteController.abort();
+        state.favoriteController = null;
+        state.favoriteChanges = [];
+        state.favoriteSending = false;
+        state.favoriteVersion++;
+        state.favoriteFailCount = 0;
         clearTimeout(eventState.timer);
         eventState.timer = null;
         if (eventState.controller) eventState.controller.abort();
@@ -49,6 +58,114 @@
         writeTS({});
         lastPushAt = 0;
         state.failCount = 0;
+    }
+
+    function favoriteChangeSong(song) {
+        if (!song || song.id === undefined || song.id === null) return null;
+        const result = {
+            id: song.id,
+            name: cleanText(song.name, 300),
+            artist: cleanText(song.artist, 300),
+            cover: cleanText(song.cover, 1000),
+            platform: cleanText(song.platform || song.platformId, 40) || 'cloudmusic',
+            favoriteTime: cleanText(song.favoriteTime, 40),
+            playCount: Number.isFinite(Number(song.playCount)) ? Math.max(0, Math.min(1000000, Number(song.playCount))) : 0,
+            firstPlayTime: cleanText(song.firstPlayTime, 40),
+            duration: normalizeNumber(song.duration, 86400)
+        };
+        if (song.rawSong && typeof song.rawSong === 'object') {
+            result.rawSong = {
+                id: song.rawSong.id,
+                name: cleanText(song.rawSong.name, 300),
+                artist: cleanText(song.rawSong.artist, 300),
+                cover: cleanText(song.rawSong.cover, 1000),
+                platform: cleanText(song.rawSong.platform || song.rawSong.platformId, 40) || 'cloudmusic',
+                duration: normalizeNumber(song.rawSong.duration, 86400),
+                album: cleanText(song.rawSong.album, 300),
+                albumId: song.rawSong.albumId,
+                artists: Array.isArray(song.rawSong.artists) ? song.rawSong.artists.slice(0, 20) : undefined,
+                ar: Array.isArray(song.rawSong.ar) ? song.rawSong.ar.slice(0, 20) : undefined,
+                al: song.rawSong.al && typeof song.rawSong.al === 'object' ? {
+                    id: song.rawSong.al.id,
+                    name: cleanText(song.rawSong.al.name, 300),
+                    picUrl: cleanText(song.rawSong.al.picUrl, 1000)
+                } : undefined,
+                dt: normalizeNumber(song.rawSong.dt, 86400000),
+                picUrl: cleanText(song.rawSong.picUrl, 1000)
+            };
+        }
+        return result;
+    }
+
+    function scheduleFavoritePush() {
+        clearTimeout(state.favoriteTimer);
+        state.favoriteTimer = setTimeout(() => flushFavoriteChanges(), 300);
+    }
+
+    function scheduleEventFlush(delay) {
+        clearTimeout(eventState.timer);
+        eventState.timer = setTimeout(() => {
+            eventState.timer = null;
+            flushEvents();
+        }, delay);
+    }
+
+    function markFavoriteChange(change) {
+        if (!state.user || !change || !change.op) return;
+        if (change.op === 'upsert') {
+            const song = favoriteChangeSong(change.song);
+            if (!song) return;
+            change = { op: 'upsert', song: song };
+        }
+        state.favoriteChanges.push(change);
+        if (state.favoriteChanges.length > 100) state.favoriteChanges.splice(0, state.favoriteChanges.length - 100);
+        scheduleFavoritePush();
+    }
+
+    async function flushFavoriteChanges(opts) {
+        if (!state.user || state.favoriteSending || !state.favoriteChanges.length) return;
+        const userId = state.user.userId;
+        const version = state.favoriteVersion;
+        const batch = state.favoriteChanges.splice(0, 50);
+        state.favoriteSending = true;
+        let retryScheduled = false;
+        const controller = new AbortController();
+        state.favoriteController = controller;
+        try {
+            const resp = await api('PUT', '/api/library/favorites', { changes: batch, updatedAt: Date.now() }, { keepalive: !!(opts && opts.keepalive), signal: controller.signal });
+            const applied = !resp.data || resp.data.applied !== false;
+            if (applied && state.favoriteVersion === version && state.user && state.user.userId === userId) {
+                const ts = readTS();
+                if (resp.data && resp.data.updatedAt) {
+                    ts.favorites = resp.data.updatedAt;
+                    writeTS(ts);
+                }
+                state.lastPushed.favorites = snapshotKind('favorites');
+                state.favoriteFailCount = 0;
+            }
+            if (!applied && state.favoriteVersion === version && state.user && state.user.userId === userId) await pullAndRestore();
+        } catch (e) {
+            if (state.favoriteVersion === version && state.user && state.user.userId === userId) {
+                state.favoriteChanges = batch.concat(state.favoriteChanges).slice(-100);
+                state.favoriteFailCount++;
+                if (state.favoriteFailCount < 5) {
+                    retryScheduled = true;
+                    clearTimeout(state.favoriteTimer);
+                    state.favoriteTimer = setTimeout(() => flushFavoriteChanges(), 5000);
+                } else retryScheduled = true;
+                if (e.status === 401) {
+                    setUser(null);
+                    resetSyncState();
+                    resetRecommendProfile();
+                }
+            }
+        } finally {
+            if (state.favoriteVersion === version) {
+                state.favoriteSending = false;
+                state.favoriteController = null;
+            }
+        }
+        if (!retryScheduled && state.favoriteVersion === version && state.user && state.user.userId === userId && state.favoriteChanges.length) flushFavoriteChanges();
     }
 
     function api(method, url, body, opts) {
@@ -88,6 +205,28 @@
         return text && text.length <= limit && !/[\u0000-\u001f\u007f]/.test(text) ? text : '';
     }
 
+    function eventTags(song) {
+        const result = [];
+        const add = (value, prefix, depth = 0) => {
+            if (depth > 4) return;
+            if (Array.isArray(value)) return value.forEach(item => add(item, prefix, depth + 1));
+            if (value && typeof value === 'object') return add(value.name || value.value || value.label || value.tag || value.genre || value.category, prefix, depth + 1);
+            if (typeof value !== 'string') return;
+            value.split(/[,，、|]/).forEach(item => {
+                const text = cleanText(item, 64).toLowerCase();
+                const key = /^(tag|genre|category):/.test(text) ? text : `${prefix}:${text}`;
+                if (text && !result.includes(key)) result.push(key);
+            });
+        };
+        add(song.tags, 'tag');
+        add(song.tag, 'tag');
+        add(song.genre, 'genre');
+        add(song.genres, 'genre');
+        add(song.category, 'category');
+        add(song.categories, 'category');
+        return result.slice(0, 16);
+    }
+
     function eventSong(song) {
         if (!song || song.id === undefined || song.id === null || typeof song.id === 'boolean') return null;
         const songId = cleanText(song.id, 128);
@@ -100,7 +239,8 @@
             artistId: cleanText(song.artistId || artist?.id, 128),
             artistName: cleanText(song.artist || artist?.name, 120),
             albumId: cleanText(song.albumId || album?.id, 128),
-            albumName: cleanText(typeof song.album === 'string' ? song.album : album?.name, 120)
+            albumName: cleanText(typeof song.album === 'string' ? song.album : album?.name, 120),
+            tags: eventTags(song)
         };
         return payload;
     }
@@ -122,6 +262,7 @@
         if (base.artistName) item.artistName = base.artistName;
         if (base.albumId) item.albumId = base.albumId;
         if (base.albumName) item.albumName = base.albumName;
+        if (base.tags.length) item.tags = base.tags;
         if (position !== undefined) item.position = position;
         if (duration !== undefined) item.duration = duration;
         list.push(item);
@@ -144,8 +285,7 @@
                 eventState.queue = batch.concat(eventState.queue).slice(-100);
                 eventState.failCount++;
                 if (eventState.failCount < 5) {
-                    clearTimeout(eventState.timer);
-                    eventState.timer = setTimeout(() => flushEvents(), 5000);
+                    scheduleEventFlush(5000);
                 }
                 if (e.status === 401) {
                     setUser(null);
@@ -159,7 +299,7 @@
                 eventState.controller = null;
             }
         }
-        if (eventState.version === version && state.user && state.user.userId === userId && eventState.queue.length) flushEvents();
+        if (eventState.version === version && state.user && state.user.userId === userId && eventState.queue.length && !eventState.timer) scheduleEventFlush(EVENT_PUSH_DELAY_MS);
     }
 
     function recordEvent(event, song, extra) {
@@ -179,7 +319,7 @@
         const last = eventState.last[key];
         if (event === 'play_progress') {
             if (last && position !== undefined && last.position !== undefined && position >= last.position && position - last.position < 10) return;
-        } else if (last && now - last.at < 1500) return;
+        } else if (!o.force && last && now - last.at < 1500) return;
         eventState.last[key] = { at: now, position };
         if (!state.user) {
             recordLocalEvent(event, base, position, duration, now);
@@ -189,11 +329,7 @@
         eventState.queue.push(data);
         if (eventState.queue.length > 150) eventState.queue.splice(0, eventState.queue.length - 150);
         
-        if (eventState.queue.length >= 40) flushEvents();
-        else {
-            clearTimeout(eventState.timer);
-            eventState.timer = setTimeout(() => flushEvents(), event === 'play_progress' ? 8000 : 6000);
-        }
+        scheduleEventFlush(EVENT_PUSH_DELAY_MS);
     }
 
     window.AerMusicRecommendEvents = { record: recordEvent, flush: flushEvents };
@@ -260,7 +396,9 @@
         logout: logout,
         updateProfile: updateProfile,
         sendEmailCode: sendEmailCode,
-        uploadAvatar: uploadAvatar
+        uploadAvatar: uploadAvatar,
+        markFavoriteChange: markFavoriteChange,
+        favoriteChangeSong: favoriteChangeSong
     };
 
     
@@ -435,7 +573,7 @@
         const ts = readTS();
         const now = Date.now();
         let anyFail = false;
-        for (const kind of Object.keys(KIND_KEYS)) {
+        for (const kind of ['playlists', 'history']) {
             if (!state.user || state.user.userId !== userId) return;
             const snap = snapshotKind(kind);
             if (snap === state.lastPushed[kind]) continue;
@@ -474,13 +612,14 @@
     function watchLocal() {
         setInterval(() => {
             if (!state.user) return;
-            for (const kind of Object.keys(KIND_KEYS)) {
+            for (const kind of ['playlists', 'history']) {
                 if (snapshotKind(kind) !== state.lastPushed[kind]) { schedulePush(kind); break; }
             }
         }, 3000);
         window.addEventListener('beforeunload', () => {
             if (state.user) {
                 pushAll({ keepalive: true });
+                flushFavoriteChanges({ keepalive: true });
                 flushEvents({ keepalive: true });
                 flushEdges();
             }

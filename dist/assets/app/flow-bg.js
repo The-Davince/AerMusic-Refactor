@@ -231,6 +231,7 @@
       this.ready = false;
       this.coverQueue = null;
       this.onCoverError = null;
+      this.onCoverReady = null;
       if (this.gl) this._initGL();
     }
 
@@ -305,30 +306,51 @@
 
     setCover(url) {
       if (!this.ready || !url) return;
-      if (url === this.textureKey) return;
-      this.textureKey = url;
-      const gl = this.gl;
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        if (this.textureKey !== url) return;
-        const pixels = processCoverPixels(img);
-        if (!this.texture) {
-          
-          this.alpha = 0;
-          this.pixels = pixels;
-          this.texture = this._createTexture(pixels);
-          if (this.onCoverReady) this.onCoverReady(pixels);
-          return;
-        }
-        
-        this.fadeFrom = this.pixels ? new Uint8Array(this.pixels) : new Uint8Array(pixels);
-        this.fadeTo = pixels;
-        this.fadeElapsed = 0;
-        if (this.onCoverReady) this.onCoverReady(pixels);
+      const key = String(url);
+      if (key === this.textureKey) return;
+      this.textureKey = key;
+      const proxy = window.location.origin + "/api/cover?u=" + encodeURIComponent(key);
+      const fail = () => {
+        if (this.textureKey !== key) return;
+        this.textureKey = "";
+        if (this.onCoverError) this.onCoverError(key);
       };
-      img.onerror = () => { if (this.onCoverError) this.onCoverError(url); };
-      img.src = url;
+      const load = (src, canFallback) => {
+        const done = (img) => {
+          if (this.textureKey !== key) return;
+          let pixels;
+          try { pixels = processCoverPixels(img); } catch (e) {
+            if (canFallback && proxy !== src) { load(proxy, false); return; }
+            fail();
+            return;
+          }
+          if (!this.texture) {
+            this.alpha = 0;
+            this.pixels = pixels;
+            this.texture = this._createTexture(pixels);
+            if (this.onCoverReady) this.onCoverReady(pixels);
+            return;
+          }
+          this.fadeFrom = this.pixels ? new Uint8Array(this.pixels) : new Uint8Array(pixels);
+          this.fadeTo = pixels;
+          this.fadeElapsed = 0;
+        };
+        const failLoad = () => {
+          if (this.textureKey !== key) return;
+          if (canFallback && proxy !== src) { load(proxy, false); return; }
+          fail();
+        };
+        const loadImage = global.AerMusicLoadCoverImage;
+        if (typeof loadImage === "function") loadImage(src).then(done, failLoad);
+        else {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => done(img);
+          img.onerror = failLoad;
+          img.src = src;
+        }
+      };
+      load(key, proxy !== key);
     }
 
     _createTexture(pixels) {
@@ -356,7 +378,11 @@
       const gl = this.gl;
       gl.bindTexture(gl.TEXTURE_2D, this.texture);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 32, 32, 0, gl.RGBA, gl.UNSIGNED_BYTE, out);
-      if (t >= 1) { this.fadeTo = null; this.fadeFrom = null; }
+      if (t >= 1) {
+        this.fadeTo = null;
+        this.fadeFrom = null;
+        if (this.onCoverReady) this.onCoverReady(this.pixels);
+      }
     }
 
     start() {

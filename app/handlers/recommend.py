@@ -26,6 +26,8 @@ MAX_RECENT = 50
 MAX_SIGNALS = 50
 MAX_TEXT = 120
 MAX_ID = 128
+MAX_TAGS = 16
+MAX_TAG_TEXT = 64
 EVENT_TYPES = {
     "play_start", "play_progress", "play_complete", "play_skip",
     "favorite_add", "favorite_remove", "playlist_add",
@@ -175,6 +177,47 @@ def _number(value, limit):
     return value
 
 
+def _tag_text(value):
+    if not isinstance(value, str):
+        return ""
+    value = value.strip().casefold()
+    if not value or len(value) > MAX_TAG_TEXT or any(ord(ch) < 32 or 0xD800 <= ord(ch) <= 0xDFFF for ch in value):
+        return ""
+    return value
+
+
+def _tag_values(value, prefix, depth=0):
+    values = []
+    if depth > 4:
+        return values
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            values.extend(_tag_values(item, prefix, depth + 1))
+    elif isinstance(value, dict):
+        for key in ("name", "value", "label", "tag", "genre", "category"):
+            if value.get(key) is not None:
+                values.extend(_tag_values(value.get(key), prefix, depth + 1))
+                break
+    elif isinstance(value, str):
+        for item in re.split(r"[,，、|]", value):
+            text = _tag_text(item)
+            if text:
+                if text.startswith(("tag:", "genre:", "category:")):
+                    values.append(text)
+                else:
+                    values.append(prefix + ":" + text)
+    return list(dict.fromkeys(values))[:MAX_TAGS]
+
+
+def _song_tags(song):
+    if not isinstance(song, dict):
+        return []
+    tags = []
+    for field, prefix in (("tags", "tag"), ("tag", "tag"), ("genre", "genre"), ("genres", "genre"), ("category", "category"), ("categories", "category")):
+        tags.extend(_tag_values(song.get(field), prefix))
+    return list(dict.fromkeys(tags))[:MAX_TAGS]
+
+
 def _event_time(value, now):
     if value is None:
         return now
@@ -229,6 +272,9 @@ def _parse_event(item, now):
         return None
     if event == "play_progress" and position is None:
         return None
+    tags = []
+    for field, prefix in (("tags", "tag"), ("tag", "tag"), ("genre", "genre"), ("genres", "genre"), ("category", "category"), ("categories", "category")):
+        tags.extend(_tag_values(value(field), prefix))
     return {
         "event": event,
         "eventid": _text(item.get("eventId", item.get("event_id")), 80),
@@ -240,6 +286,7 @@ def _parse_event(item, now):
         "albumname": album_name,
         "position": position,
         "duration": duration,
+        "tags": list(dict.fromkeys(tags))[:MAX_TAGS],
         "createdat": event_at,
     }
 
@@ -273,11 +320,12 @@ def _store_events(userid, events):
     rows = [(
         userid, item["eventid"], item["event"], item["platform"], item["songid"],
         item["artistid"], item["artistname"], item["albumid"], item["albumname"],
+        json.dumps(item.get("tags") or [], ensure_ascii=False, separators=(",", ":")),
         item["position"], item["duration"], item["createdat"],
     ) for item in events]
     db.run_many(
-        "INSERT INTO recommend_events(userid,eventid,event,platform,songid,artistid,artistname,albumid,albumname,position,duration,createdat) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING", rows,
+        "INSERT INTO recommend_events(userid,eventid,event,platform,songid,artistid,artistname,albumid,albumname,tags,position,duration,createdat) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING", rows,
     )
     cutoff = int(time.time() * 1000) - EVENT_RETENTION_MS
     db.run("DELETE FROM recommend_events WHERE userid = ? AND createdat < ?", (userid, cutoff))
@@ -290,12 +338,20 @@ def _store_events(userid, events):
 
 def _load_events(userid):
     cutoff = int(time.time() * 1000) - EVENT_RETENTION_MS
-    return db.query(
-        "SELECT event,platform,songid,artistid,artistname,albumid,albumname,position,duration,createdat "
+    rows = db.query(
+        "SELECT event,platform,songid,artistid,artistname,albumid,albumname,tags,position,duration,createdat "
         "FROM recommend_events WHERE userid = ? AND createdat >= ? "
         "ORDER BY createdat DESC, id DESC LIMIT ?",
         (userid, cutoff, EVENT_MAX_PER_USER),
     )
+    for row in rows:
+        raw = row.get("tags")
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, ValueError, RecursionError):
+            parsed = []
+        row["tags"] = [value for value in parsed if isinstance(value, str)][:MAX_TAGS] if isinstance(parsed, list) else []
+    return rows
 
 
 def _parse_edge(item):
@@ -423,6 +479,9 @@ def _build_profile(userid):
     favorite_albums = {}
     behavior_artists = {}
     behavior_albums = {}
+    disliked_artists = {}
+    disliked_albums = {}
+    disliked_tags = {}
     behavior_songs = {}
     behavior_types = defaultdict(int)
     platforms = {}
@@ -496,12 +555,24 @@ def _build_profile(userid):
         behavior_types[event["event"]] += 1
         platform = event.get("platform") or "unknown"
         song_key = f"{platform}:id:{event['songid']}"
+        current_dislike = False
         if event["event"] in ("dislike", "dislike_remove") and song_key not in disliked_state:
-            disliked_state[song_key] = event["event"] == "dislike"
+            current_dislike = event["event"] == "dislike"
+            disliked_state[song_key] = current_dislike
         if event["event"] in LIBRARY_EVENT_TYPES or event["event"] in INFO_EVENT_TYPES:
             continue
         age = max(0, now - int(event.get("createdat") or now))
         score *= math.pow(0.5, age / (30 * 24 * 60 * 60 * 1000))
+        if current_dislike:
+            artist = (event.get("artistid") or "", event.get("artistname") or "")
+            if artist[0] or artist[1]:
+                _add_signal(disliked_artists, f"{platform}:{_signal_key(artist)}", artist, score, platform)
+            album = (event.get("albumid") or "", event.get("albumname") or "")
+            if album[0] or album[1]:
+                _add_signal(disliked_albums, f"{platform}:{_signal_key(album)}", album, score, platform)
+            for tag in event.get("tags") or []:
+                if isinstance(tag, str) and tag:
+                    _add_signal(disliked_tags, f"{platform}:{tag}", (tag, tag), score, platform)
         song = behavior_songs.get(song_key)
         if song is None:
             song = {
@@ -521,6 +592,11 @@ def _build_profile(userid):
     def sort_signals(bucket):
         result = list(bucket.values())
         result.sort(key=lambda item: (-item["score"], -item["count"], item.get("name") or ""))
+        return result[:MAX_SIGNALS]
+
+    def sort_disliked_signals(bucket):
+        result = list(bucket.values())
+        result.sort(key=lambda item: (item["score"], -item["count"], item.get("name") or ""))
         return result[:MAX_SIGNALS]
 
     behavior_song_values = list(behavior_songs.values())
@@ -547,6 +623,9 @@ def _build_profile(userid):
             "artists": sort_signals(behavior_artists),
             "albums": sort_signals(behavior_albums),
             "songs": behavior_song_values,
+            "dislikedArtists": sort_disliked_signals(disliked_artists),
+            "dislikedAlbums": sort_disliked_signals(disliked_albums),
+            "dislikedTags": sort_disliked_signals(disliked_tags),
             "dislikedIds": [key.split(":id:", 1)[1] for key in disliked_keys if ":id:" in key],
             "dislikedKeys": disliked_keys,
         },
@@ -824,6 +903,11 @@ def _album_keys(song):
     return keys
 
 
+def _tag_keys(song):
+    platform = _text(song.get("platform"), 40) or RECOMMEND_PLATFORM
+    return [f"{platform}:{tag}" for tag in _song_tags(song)]
+
+
 def _score_map(items):
     result = {}
     for item in items or []:
@@ -834,6 +918,22 @@ def _score_map(items):
         except (TypeError, ValueError):
             score = 0.0
         result[_key_of(item)] = score
+    return result
+
+
+def _tag_score_map(items):
+    result = {}
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        platform = _text(item.get("platform"), 40) or RECOMMEND_PLATFORM
+        tag = _text(item.get("id") or item.get("name"), MAX_TAG_TEXT)
+        if not tag:
+            continue
+        try:
+            result[f"{platform}:{tag}"] = float(item.get("score") or 0)
+        except (TypeError, ValueError):
+            continue
     return result
 
 
@@ -896,6 +996,9 @@ def _recommend_signals(profile):
         "behavior_songs": behavior_songs,
         "behavior_artists": _score_map(behavior.get("artists")),
         "behavior_albums": _score_map(behavior.get("albums")),
+        "disliked_artists": _score_map(behavior.get("dislikedArtists")),
+        "disliked_albums": _score_map(behavior.get("dislikedAlbums")),
+        "disliked_tags": _tag_score_map(behavior.get("dislikedTags")),
         "edges": edges,
         "recent_src": {str(value) for value in (profile.get("recentKeys") or [])},
         "recent_artists": {},
@@ -1155,6 +1258,9 @@ def _rank_candidates(sources, signals, seed_artist_keys, recent_artists, exclude
         score += _behavior_score(signals["behavior_songs"], [f"{RECOMMEND_PLATFORM}:id:{entry['id']}"], 4) * 0.16
         score += _behavior_score(signals["behavior_artists"], entry["artists"], 4) * 0.1
         score += _behavior_score(signals["behavior_albums"], entry["albums"], 4) * 0.08
+        score += _behavior_score(signals["disliked_artists"], entry["artists"], 4) * 0.16
+        score += _behavior_score(signals["disliked_albums"], entry["albums"], 4) * 0.12
+        score += _behavior_score(signals["disliked_tags"], _tag_keys(song), 4) * 0.1
         score += _edge_boost(signals, _song_keys(song), 0.3)
         score += _hotness(song)
         score += min(0.08, (len(entry["sources"]) - 1) * 0.04)
@@ -1211,6 +1317,7 @@ def _out_song(song):
         },
         "dt": duration,
         "pop": pop,
+        "tags": _song_tags(song),
         "platform": RECOMMEND_PLATFORM,
     }
 
@@ -1378,6 +1485,7 @@ def _client_profile(req):
         "behavior": {
             "dislikedIds": values(behavior, "dislikedIds", 100),
             "dislikedKeys": values(behavior, "dislikedKeys", 100),
+            "dislikedTags": values(behavior, "dislikedTags", 100),
             "songs": values(behavior, "songs", 100),
             "artists": values(behavior, "artists", 100),
             "albums": values(behavior, "albums", 100),

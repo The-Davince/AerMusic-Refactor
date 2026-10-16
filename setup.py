@@ -108,6 +108,7 @@ TABLES = [
         artistname TEXT NOT NULL DEFAULT '',
         albumid TEXT NOT NULL DEFAULT '',
         albumname TEXT NOT NULL DEFAULT '',
+        tags TEXT NOT NULL DEFAULT '[]',
         position REAL,
         duration REAL,
         createdat INTEGER NOT NULL
@@ -227,6 +228,7 @@ PG_TABLES = [
         artistname TEXT NOT NULL DEFAULT '',
         albumid TEXT NOT NULL DEFAULT '',
         albumname TEXT NOT NULL DEFAULT '',
+        tags TEXT NOT NULL DEFAULT '[]',
         position DOUBLE PRECISION,
         duration DOUBLE PRECISION,
         createdat BIGINT NOT NULL
@@ -269,6 +271,7 @@ USER_NEW_COLUMNS = [
 
 RECOMMEND_EVENT_NEW_COLUMNS = [
     ("eventid", "TEXT NOT NULL DEFAULT ''"),
+    ("tags", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 

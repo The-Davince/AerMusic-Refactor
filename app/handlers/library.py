@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import threading
 import time
 
 from fastapi import APIRouter, Request
@@ -21,6 +22,7 @@ SHARE_MAX_SONGS = 2000
 _UUID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 _SAFE_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$")
 _SAFE_PLATFORM_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+_favorite_change_lock = threading.Lock()
 
 
 def _resp(req, code, msg, status=200, data=None):
@@ -102,6 +104,65 @@ def _safe_share_songs(songs):
     return [item for item in (_safe_share_song(song) for song in songs[:SHARE_MAX_SONGS]) if item]
 
 
+def _favorite_key(song):
+    if not isinstance(song, dict) or song.get("id") is None:
+        return ""
+    return f"{song.get('platform') or 'cloudmusic'}:id:{song.get('id')}"
+
+
+def _compact_favorite(song):
+    if not isinstance(song, dict) or song.get("id") is None:
+        return None
+    result = {key: song.get(key) for key in ("id", "name", "artist", "cover", "platform", "favoriteTime", "playCount", "firstPlayTime", "duration") if song.get(key) is not None}
+    raw = song.get("rawSong")
+    if isinstance(raw, dict) and raw.get("id") is not None:
+        result["rawSong"] = {key: raw.get(key) for key in ("id", "name", "artist", "cover", "platform", "duration", "album", "albumId", "artists", "ar", "al", "dt", "picUrl") if raw.get(key) is not None}
+    return result
+
+
+def _apply_favorite_changes(userid, changes, updated_at):
+    with _favorite_change_lock:
+        row = db.get("SELECT data, updatedat FROM library WHERE userid = ? AND kind = ?", (userid, "favorites"))
+        try:
+            songs = json.loads(row["data"]) if row else []
+        except (TypeError, ValueError):
+            songs = []
+        if not isinstance(songs, list):
+            songs = []
+        by_key = {key: _compact_favorite(song) for song in songs if (key := _favorite_key(song))}
+        order = [key for key in by_key]
+        for change in changes:
+            if not isinstance(change, dict):
+                continue
+            op = change.get("op")
+            if op == "remove":
+                key = _favorite_key({"id": change.get("id"), "platform": change.get("platform")})
+                if key:
+                    by_key.pop(key, None)
+                    if key in order:
+                        order.remove(key)
+            elif op == "upsert" and isinstance(change.get("song"), dict):
+                song = change["song"]
+                key = _favorite_key(song)
+                if key:
+                    by_key[key] = _compact_favorite(song)
+                    if key in order:
+                        order.remove(key)
+                    order.append(key)
+        result = [by_key[key] for key in order if key in by_key]
+        raw = json.dumps(result, ensure_ascii=False)
+        if len(raw) > MAX_LIBRARY_BYTES:
+            return None, "数据太大了"
+        db.run(
+            "INSERT INTO library(userid, kind, data, updatedat) VALUES(?,?,?,?) "
+            "ON CONFLICT(userid, kind) DO UPDATE SET data = excluded.data, updatedat = excluded.updatedat "
+            "WHERE excluded.updatedat >= library.updatedat",
+            (userid, "favorites", raw, updated_at),
+        )
+        saved = db.get("SELECT updatedat FROM library WHERE userid = ? AND kind = ?", (userid, "favorites"))
+        return (saved["updatedat"] if saved else updated_at), None
+
+
 @router.get("/library")
 async def getAll(req: Request):
     user = currentUser(req)
@@ -132,10 +193,19 @@ async def putKind(req: Request, kind: str):
     if err:
         return err
     payload = body.get("data")
+    changes = body.get("changes")
     updatedAt = body.get("updatedAt")
     now_ms = int(time.time() * 1000)
     if not isinstance(updatedAt, int) or isinstance(updatedAt, bool) or updatedAt < 0 or updatedAt > now_ms + 5 * 60 * 1000:
         updatedAt = now_ms
+    if kind == "favorites" and isinstance(changes, list):
+        if not changes or len(changes) > 100:
+            return _resp(req, 400, "收藏变更数量不合法", 400)
+        applied_at, change_error = await asyncio.to_thread(_apply_favorite_changes, user["id"], changes, updatedAt)
+        if change_error:
+            return _resp(req, 413, change_error, 413)
+        a(f"library change: uid={user['id']} kind=favorites count={len(changes)} updated={applied_at} log_id={get_log_id(req)}")
+        return _resp(req, 0, "ok", data={"kind": kind, "updatedAt": applied_at, "applied": applied_at == updatedAt, "changes": len(changes)})
     raw = json.dumps(payload, ensure_ascii=False)
     if len(raw) > MAX_LIBRARY_BYTES:
         return _resp(req, 413, "数据太大了", 413)
