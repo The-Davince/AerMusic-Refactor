@@ -727,7 +727,13 @@ const CloudMusicPlatform = {
             params.profile = JSON.stringify(this._localRecommendProfile());
             const res = await axios.get('/api/recommend/get', { params });
             const songs = res.data && res.data.data ? res.data.data.songs : null;
-            return Array.isArray(songs) ? songs : [];
+            if (!Array.isArray(songs)) return [];
+            const disliked = this._recommendSignals().dislikedIds;
+            return songs.filter(song => {
+                const id = this._songId(song);
+                const key = this._songKey(song);
+                return !disliked.has(id) && !disliked.has(key);
+            });
         } catch (e) {
             console.error('[CloudMusic] 获取推荐失败:', e);
             return [];
