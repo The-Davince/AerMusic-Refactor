@@ -45,7 +45,7 @@ UPSTREAM_MAX_RESPONSE_BYTES = max(64 * 1024, int(os.environ.get("UPSTREAM_MAX_RE
 UP_PROXY_TTL = max(0, int(os.environ.get("UP_PROXY_TTL", "120")))
 
 # true 时前端取推荐直接走 /api/recommend/get(后端结合画像实时算), 不再走前端推荐逻辑
-INTERNAL_RECOMMEND = os.environ.get("INTERNAL_RECOMMEND", "false").strip().lower() == "true"
+INTERNAL_RECOMMEND = os.environ.get("INTERNAL_RECOMMEND", "true").strip().lower() == "true"
 
 TO_THREAD_WORKERS = int(os.environ.get("TO_THREAD_WORKERS", "64"))
 
@@ -68,6 +68,7 @@ MAX_LIMIT = int(os.environ.get("MAX_LIMIT", "100"))
 
 
 TRUSTED_PROXIES = [o.strip() for o in os.environ.get("TRUSTED_PROXIES", "127.0.0.1,::1").split(",") if o.strip()]
+FORWARDED_ALLOW_IPS = os.environ.get("FORWARDED_ALLOW_IPS", "127.0.0.1").strip() or "127.0.0.1"
 
 
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]

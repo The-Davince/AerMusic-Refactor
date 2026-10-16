@@ -83,7 +83,7 @@ def main():
         log_config=None,
         access_log=False,
         proxy_headers=True,
-        forwarded_allow_ips=",".join(cfg.TRUSTED_PROXIES) or "127.0.0.1",
+        forwarded_allow_ips=cfg.FORWARDED_ALLOW_IPS,
         timeout_graceful_shutdown=5,
     )
 

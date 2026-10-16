@@ -578,6 +578,8 @@ async def getProfile(req: Request):
     user = currentUser(req)
     if not user:
         return _resp(req, 401, "未登录", 401)
+    if not allow(f"recprofile|user:{user['id']}", RECOMMEND_PROFILE_MAX_PER_MIN, 60):
+        return _resp(req, 429, "画像请求过于频繁", 429)
     data = await asyncio.to_thread(_build_profile, user["id"])
     return _resp(req, 0, "ok", data=data)
 
@@ -637,6 +639,7 @@ RECOMMEND_PLATFORM = "cloudmusic"
 RECOMMEND_LIMIT_DEFAULT = 5
 RECOMMEND_LIMIT_MAX = 20
 RECOMMEND_MAX_PER_MIN = 150
+RECOMMEND_PROFILE_MAX_PER_MIN = 30
 RECOMMEND_SOURCE_TTL = 300
 RECOMMEND_DETAIL_TTL = 600
 RECOMMEND_POOL = 24
@@ -646,9 +649,14 @@ RECOMMEND_SOURCE_WEIGHTS = {
     "artist": 0.72,
     "new": 0.42,
     "similarArtist": 0.64,
-    "similarPlaylist": 0.6,
     "hotPlaylist": 0.5,
+    "publicPlaylist": 0.38,
+    "highQualityPlaylist": 0.46,
+    "topPlaylist": 0.42,
 }
+RECOMMEND_PUBLIC_PLAYLIST_LIMIT = 8
+RECOMMEND_PUBLIC_PLAYLIST_PICK = 2
+RECOMMEND_PUBLIC_TRACK_LIMIT = 24
 RECOMMEND_RIP_OFF_RE = re.compile(r"翻唱|翻录|盗版|dj版|抖音版")
 RECOMMEND_INSTRUMENTAL_RE = re.compile(r"伴奏|纯音乐|纯享|卡拉\s*ok|karaoke|instrumental")
 RECOMMEND_VARIANT_BRACKET_RE = re.compile(
@@ -691,12 +699,13 @@ async def _up(path, params, ttl=RECOMMEND_SOURCE_TTL):
         return None
 
 
-async def _tracks_of_playlists(playlists):
+async def _tracks_of_playlists(playlists, pick_limit=2, track_limit=30):
+    playlists = [item for item in playlists if _numeric_id(item.get("id"))] if playlists else []
     if not playlists:
         return []
-    picked = random.sample(playlists, min(2, len(playlists)))
+    picked = random.sample(playlists, min(pick_limit, len(playlists)))
     results = await asyncio.gather(
-        *[_up("playlist/track/all", {"id": _numeric_id(item.get("id")), "limit": 30}) for item in picked if _numeric_id(item.get("id"))],
+        *[_up("playlist/track/all", {"id": _numeric_id(item.get("id")), "limit": track_limit}) for item in picked if _numeric_id(item.get("id"))],
         return_exceptions=True)
     songs = []
     for result in results:
@@ -706,11 +715,6 @@ async def _tracks_of_playlists(playlists):
 
 async def _source_similar(song_id):
     return _list_of(await _up("simi/song", {"id": song_id}), "songs")
-
-
-async def _source_similar_playlist(song_id):
-    data = await _up("simi/playlist", {"id": song_id})
-    return await _tracks_of_playlists(_list_of(data, "playlists"))
 
 
 async def _source_artist_top(artist_id):
@@ -744,15 +748,38 @@ async def _source_hot_playlist():
     return await _tracks_of_playlists(_list_of(data, "playlists"))
 
 
-async def _gather_sources(seed_ids, artist_ids):
+async def _source_public_playlist():
+    data = await _up("personalized", {"limit": RECOMMEND_PUBLIC_PLAYLIST_LIMIT}, ttl=RECOMMEND_DETAIL_TTL)
+    return await _tracks_of_playlists(
+        _list_of(data, "result"), RECOMMEND_PUBLIC_PLAYLIST_PICK, RECOMMEND_PUBLIC_TRACK_LIMIT)
+
+
+async def _source_high_quality_playlist():
+    data = await _up("top/playlist/highquality", {"limit": RECOMMEND_PUBLIC_PLAYLIST_LIMIT}, ttl=RECOMMEND_DETAIL_TTL)
+    return await _tracks_of_playlists(
+        _list_of(data, "playlists"), RECOMMEND_PUBLIC_PLAYLIST_PICK, RECOMMEND_PUBLIC_TRACK_LIMIT)
+
+
+async def _source_top_playlist():
+    data = await _up("toplist", {}, ttl=RECOMMEND_DETAIL_TTL)
+    return await _tracks_of_playlists(
+        _list_of(data, "list"), RECOMMEND_PUBLIC_PLAYLIST_PICK, RECOMMEND_PUBLIC_TRACK_LIMIT)
+
+
+async def _gather_sources(seed_ids, artist_ids, include_explore=False):
     seed_ids = [value for value in seed_ids if value]
     artist_ids = [value for value in artist_ids if value]
     jobs = [("new", _source_new_songs())]
     for seed_id in seed_ids:
         jobs.append(("similar", _source_similar(seed_id)))
-        jobs.append(("similarPlaylist", _source_similar_playlist(seed_id)))
     if not seed_ids:
         jobs.append(("hotPlaylist", _source_hot_playlist()))
+    if include_explore:
+        jobs.extend([
+            ("publicPlaylist", _source_public_playlist()),
+            ("highQualityPlaylist", _source_high_quality_playlist()),
+            ("topPlaylist", _source_top_playlist()),
+        ])
     for artist_id in artist_ids:
         jobs.append(("artist", _source_artist_top(artist_id)))
         jobs.append(("similarArtist", _source_similar_artist(artist_id)))
@@ -810,17 +837,30 @@ def _score_map(items):
     return result
 
 
+def _scoped_numeric_ids(values, keys):
+    ids = {str(value) for value in (values or []) if value not in (None, "")}
+    keys = {str(value) for value in (keys or []) if value not in (None, "")}
+    if not keys:
+        return ids
+    scoped = {
+        key.split(":id:", 1)[1]
+        for key in keys
+        if key.startswith(f"{RECOMMEND_PLATFORM}:id:") and key.split(":id:", 1)[1]
+    }
+    return ids & scoped
+
+
 def _recommend_signals(profile):
     profile = profile if isinstance(profile, dict) else {}
     favorites = profile.get("favorites") if isinstance(profile.get("favorites"), dict) else {}
     behavior = profile.get("behavior") if isinstance(profile.get("behavior"), dict) else {}
     graph = profile.get("graph") if isinstance(profile.get("graph"), dict) else {}
-    played = {str(value) for value in (profile.get("recentKeys") or [])}
-    played.update(str(value) for value in (profile.get("recentIds") or []))
-    disliked = {str(value) for value in (behavior.get("dislikedKeys") or [])}
-    disliked.update(str(value) for value in (behavior.get("dislikedIds") or []))
-    favorite = {str(value) for value in (favorites.get("keys") or [])}
-    favorite.update(str(value) for value in (favorites.get("ids") or []))
+    recent_keys = {str(value) for value in (profile.get("recentKeys") or [])}
+    disliked_keys = {str(value) for value in (behavior.get("dislikedKeys") or [])}
+    favorite_keys = {str(value) for value in (favorites.get("keys") or [])}
+    played = recent_keys | _scoped_numeric_ids(profile.get("recentIds"), recent_keys)
+    disliked = disliked_keys | _scoped_numeric_ids(behavior.get("dislikedIds"), disliked_keys)
+    favorite = favorite_keys | _scoped_numeric_ids(favorites.get("ids"), favorite_keys)
     behavior_songs = {}
     for item in (behavior.get("songs") or []):
         if not isinstance(item, dict):
@@ -969,7 +1009,7 @@ def _pick_diverse(items, limit):
 
 def _recommend_state_for(owner, session_id):
     today = time.strftime("%Y%m%d", time.localtime())
-    key = f"{owner}|{session_id}"
+    key = owner
     with _recommend_state_lock:
         state = _recommend_state.get(key)
         if not state or state.get("day") != today:
@@ -993,7 +1033,7 @@ def _mark_recommend_state(owner, session_id, song_ids):
     if not song_ids:
         return
     today = time.strftime("%Y%m%d", time.localtime())
-    key = f"{owner}|{session_id}"
+    key = owner
     with _recommend_state_lock:
         state = _recommend_state.setdefault(key, {"day": today, "day_seen": set(), "sessions": {}})
         if state.get("day") != today:
@@ -1009,7 +1049,7 @@ def _mark_recommend_state(owner, session_id, song_ids):
 
 def _reserve_recommend_candidates(owner, session_id, candidates, limit):
     today = time.strftime("%Y%m%d", time.localtime())
-    key = f"{owner}|{session_id}"
+    key = owner
     with _recommend_state_lock:
         state = _recommend_state.get(key)
         if not state or state.get("day") != today:
@@ -1029,6 +1069,10 @@ def _reserve_recommend_candidates(owner, session_id, candidates, limit):
                 break
         state["day_seen"].update(picked)
         session.update(picked)
+        if len(state["day_seen"]) > MAX_ITEMS * 10:
+            state["day_seen"] = set(list(state["day_seen"])[-MAX_ITEMS * 10:])
+        if len(session) > MAX_ITEMS * 10:
+            session.difference_update(set(list(session)[:-MAX_ITEMS * 10]))
         return selected
 
 
@@ -1093,7 +1137,9 @@ def _rank_candidates(sources, signals, seed_artist_keys, recent_artists, exclude
     for entry in candidates.values():
         song = entry["song"]
         text = _song_text(song)
-        score = entry["weight"] + (0.34 if "similar" in entry["sources"] else 0)
+        score = entry["weight"]
+        if "similar" in entry["sources"]:
+            score += 0.34
         if RECOMMEND_RIP_OFF_RE.search(text):
             score -= 0.35
         if RECOMMEND_INSTRUMENTAL_RE.search(text):
@@ -1202,8 +1248,15 @@ async def _enrich_details(picks):
 
 
 async def _recent_artist_counts(profile):
-    ids = [_numeric_id(value) for value in (profile.get("recentIds") or [])][:8]
-    ids = [value for value in ids if value]
+    recent_keys = {str(value) for value in (profile.get("recentKeys") or [])}
+    ids = []
+    for value in (profile.get("recentIds") or []):
+        song_id = _numeric_id(value)
+        if not song_id or (recent_keys and f"{RECOMMEND_PLATFORM}:id:{song_id}" not in recent_keys):
+            continue
+        ids.append(song_id)
+        if len(ids) >= 8:
+            break
     if not ids:
         return {}
     data = await _up("song/detail", {"ids": ",".join(ids)}, ttl=RECOMMEND_DETAIL_TTL)
@@ -1214,15 +1267,31 @@ async def _recent_artist_counts(profile):
     return counts
 
 
-def _pick_seed(profile):
-    for value in (profile.get("recentIds") or []):
-        song_id = _numeric_id(value)
-        if song_id:
-            return song_id
+def _pick_seeds(profile):
+    seeds = []
+    recent_keys = {str(value) for value in (profile.get("recentKeys") or [])}
+    favorite_keys = {
+        str(value) for value in ((profile.get("favorites") or {}).get("keys") or [])
+    } if isinstance(profile.get("favorites"), dict) else set()
+
+    def add(values, keys):
+        for value in values:
+            song_id = _numeric_id(value)
+            if not song_id:
+                continue
+            if keys and f"{RECOMMEND_PLATFORM}:id:{song_id}" not in keys:
+                continue
+            seeds.append(song_id)
+
+    add(profile.get("recentIds") or [], recent_keys)
     favorites = profile.get("favorites") if isinstance(profile.get("favorites"), dict) else {}
-    ids = [_numeric_id(value) for value in (favorites.get("ids") or [])]
-    ids = [value for value in ids if value]
-    return random.choice(ids) if ids else ""
+    add(favorites.get("ids") or [], favorite_keys)
+    return list(dict.fromkeys(seeds))[:RECOMMEND_MAX_SEEDS]
+
+
+def _pick_seed(profile):
+    seeds = _pick_seeds(profile)
+    return seeds[0] if seeds else ""
 
 
 async def _seed_artist_id(seed_id):
@@ -1352,7 +1421,7 @@ async def _get_recommend(req: Request):
     if explicit_ids is None:
         return _resp(req, 400, "种子歌曲不合法", 400)
     profile = await asyncio.to_thread(_build_profile, user["id"]) if user else _client_profile(req)
-    seed_ids = explicit_ids or [_pick_seed(profile)]
+    seed_ids = explicit_ids or _pick_seeds(profile)
     seed_ids = list(dict.fromkeys(value for value in seed_ids if value))[:RECOMMEND_MAX_SEEDS]
     if explicit_ids:
         data = await _up("song/detail", {"ids": ",".join(seed_ids)}, ttl=RECOMMEND_DETAIL_TTL)
@@ -1372,15 +1441,16 @@ async def _get_recommend(req: Request):
     except (TypeError, ValueError):
         familiarity = 0.5
     familiarity = max(0.0, min(1.0, familiarity))
+    include_explore = not seed_ids
     sources, recent_artists = await asyncio.gather(
-        _gather_sources(seed_ids, artist_ids),
+        _gather_sources(seed_ids, artist_ids, include_explore=include_explore),
         _recent_artist_counts(profile),
     )
     signals["recent_artists"] = recent_artists
     seed_artist_keys = [f"{RECOMMEND_PLATFORM}:id:{artist_id}" for artist_id in artist_ids]
     ranked = _rank_candidates(sources, signals, seed_artist_keys, recent_artists, excluded, familiarity)
-    if len(ranked) < limit and any(songs for _, songs in sources):
-        fallback = await _gather_sources([], [])
+    if len(ranked) < limit and any(songs for _, songs in sources) and not include_explore:
+        fallback = await _gather_sources([], [], include_explore=True)
         sources.extend(fallback)
         ranked = _rank_candidates(sources, signals, seed_artist_keys, recent_artists, excluded, familiarity)
     picks = _reserve_candidates(owner, session_id, ranked, limit)

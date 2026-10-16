@@ -238,20 +238,20 @@ def _get_real_ip(request) -> str:
         except ValueError:
             return None
 
+    # 优先取 EdgeOne 回源注入的客户端 IP 头部, 直连无此头时走下方可信代理逻辑
+    edge = _valid(request.headers.get("client-real-ip0"))
+    if edge:
+        return edge
+    # 只信任可信代理写入的 xff 最右跳, 直连时客户端可写的 xff/real-ip 不作 identity
     peer = _valid(request.client.host) if request.client else None
     if peer:
         import config as _cfg
-        trusted = _in_trusted_proxies(peer, tuple(getattr(_cfg, "TRUSTED_PROXIES", ()) or ()))
-        edge = _valid(request.headers.get("x-client-realip0", "").strip())
-        if trusted and edge:
-            return edge
-        if trusted:
+        if _in_trusted_proxies(peer, tuple(getattr(_cfg, "TRUSTED_PROXIES", ()) or ())):
             xff = request.headers.get("x-forwarded-for")
             if xff:
-                for candidate in xff.split(","):
-                    first = _valid(candidate.strip())
-                    if first:
-                        return first
+                last = _valid(xff.split(",")[-1].strip())
+                if last:
+                    return last
             real = _valid(request.headers.get("x-real-ip"))
             if real:
                 return real

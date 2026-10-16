@@ -547,14 +547,16 @@ class TtmlTools {
 
     
     _isMetaText(text) {
-        return /^(?:作词|作曲|编曲|制作人|混音|母带|监制|和声|吉他|贝斯|鼓手|录音|滚动歌词贡献者|翻译歌词贡献者)\s*[:：]/.test(String(text || '').trim());
+        const decoded = String(text || '').replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (full, code) => { const lower = code.toLowerCase(); if (lower === 'amp') return '&'; if (lower === 'lt') return '<'; if (lower === 'gt') return '>'; if (lower === 'quot') return '"'; if (lower === 'apos') return "'"; const value = lower.startsWith('#x') ? parseInt(lower.slice(2), 16) : parseInt(lower.slice(1), 10); return Number.isFinite(value) && value >= 0 && value <= 0x10ffff && !(value >= 0xd800 && value <= 0xdfff) ? String.fromCodePoint(value) : full; });
+        return /^(?:作词|作曲|编曲|制作人|混音|母带|监制|和声|吉他|贝斯|鼓手|录音|滚动歌词贡献者|翻译歌词贡献者)\s*[:：]/.test(decoded.trim());
     }
 
     _parseLrc(lrcText) {
         const lines = lrcText.split('\n');
         const result = [];
         const metaSeen = new Set();
-        const metaKey = (text) => String(text || '').replace(/\s+/g, ' ').trim().replace(/：/g, ':').replace(/\s*:\s*/g, ':').toLocaleLowerCase();
+        const decodeMetaEntities = (text) => String(text || '').replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (full, code) => { const lower = code.toLowerCase(); if (lower === 'amp') return '&'; if (lower === 'lt') return '<'; if (lower === 'gt') return '>'; if (lower === 'quot') return '"'; if (lower === 'apos') return "'"; const value = lower.startsWith('#x') ? parseInt(lower.slice(2), 16) : parseInt(lower.slice(1), 10); return Number.isFinite(value) && value >= 0 && value <= 0x10ffff && !(value >= 0xd800 && value <= 0xdfff) ? String.fromCodePoint(value) : full; });
+        const metaKey = (text) => decodeMetaEntities(String(text || '')).replace(/\s+/g, ' ').trim().replace(/：/g, ':').replace(/\s*:\s*/g, ':').toLocaleLowerCase();
         const isMeta = (text) => this._isMetaText(text);
         
         for (const line of lines) {

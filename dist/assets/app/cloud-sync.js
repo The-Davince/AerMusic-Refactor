@@ -10,6 +10,8 @@
         history: 'AerMusic_History'
     };
     const SYNC_TS_KEY = 'AerMusic_Sync_Timestamps';
+    const LOCAL_BEHAVIOR_KEY = 'AerMusic_Recommend_Behavior';
+    const LOCAL_EVENT_TYPES = new Set(['play_start', 'play_progress', 'play_complete', 'play_skip', 'favorite_add', 'favorite_remove', 'playlist_add', 'dislike', 'dislike_remove']);
     const PUSH_INTERVAL_MS = 60000;
     let lastPushAt = 0;
     const state = { user: null, pushTimer: null, lastPushed: {}, restoring: false, failCount: 0, restoreVersion: 0 };
@@ -108,6 +110,24 @@
         return Number.isFinite(number) && number >= 0 && number <= max ? Math.round(number * 1000) / 1000 : undefined;
     }
 
+    function recordLocalEvent(event, base, position, duration, at) {
+        if (!LOCAL_EVENT_TYPES.has(event) || !base || !/^\d{1,15}$/.test(base.songId)) return;
+        let list = [];
+        try {
+            const raw = JSON.parse(localStorage.getItem(LOCAL_BEHAVIOR_KEY) || '[]');
+            if (Array.isArray(raw)) list = raw;
+        } catch (e) {}
+        const item = { event, at, songId: base.songId, platform: base.platform };
+        if (base.artistId) item.artistId = base.artistId;
+        if (base.artistName) item.artistName = base.artistName;
+        if (base.albumId) item.albumId = base.albumId;
+        if (base.albumName) item.albumName = base.albumName;
+        if (position !== undefined) item.position = position;
+        if (duration !== undefined) item.duration = duration;
+        list.push(item);
+        try { localStorage.setItem(LOCAL_BEHAVIOR_KEY, JSON.stringify(list.slice(-120))); } catch (e) {}
+    }
+
     async function flushEvents(opts) {
         if (!state.user || eventState.sending || !eventState.queue.length) return;
         const userId = state.user.userId;
@@ -143,7 +163,8 @@
     }
 
     function recordEvent(event, song, extra) {
-        if (!state.user || !['play_start', 'play_progress', 'play_complete', 'play_skip', 'favorite_add', 'favorite_remove', 'playlist_add', 'dislike', 'dislike_remove', 'search', 'view_song', 'view_artist', 'view_album', 'playlist_create', 'playlist_update', 'playlist_delete', 'playlist_play'].includes(event)) return;
+        if (!['play_start', 'play_progress', 'play_complete', 'play_skip', 'favorite_add', 'favorite_remove', 'playlist_add', 'dislike', 'dislike_remove', 'search', 'view_song', 'view_artist', 'view_album', 'playlist_create', 'playlist_update', 'playlist_delete', 'playlist_play'].includes(event)) return;
+        if (!state.user && !LOCAL_EVENT_TYPES.has(event)) return;
         const base = eventSong(song);
         if (!base) return;
         const now = Date.now();
@@ -160,6 +181,11 @@
             if (last && position !== undefined && last.position !== undefined && position >= last.position && position - last.position < 10) return;
         } else if (last && now - last.at < 1500) return;
         eventState.last[key] = { at: now, position };
+        if (!state.user) {
+            recordLocalEvent(event, base, position, duration, now);
+            if (Object.keys(eventState.last).length > 512) eventState.last = Object.create(null);
+            return;
+        }
         eventState.queue.push(data);
         if (eventState.queue.length > 150) eventState.queue.splice(0, eventState.queue.length - 150);
         
