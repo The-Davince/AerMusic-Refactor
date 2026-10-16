@@ -71,10 +71,11 @@ async def server_error_handler(request: Request, exc):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.connect(cfg.DATABASE_PATH)
-    from setup import tables_for, ensure_users
+    from setup import tables_for, ensure_users, ensure_recommend_events
     for ddl in tables_for(db.storage_backend()):
         db.run(ddl)
     ensure_users()
+    ensure_recommend_events()
     db.run("DELETE FROM sessions WHERE expiresat < ?", (int(time.time()),))
     if cfg.OIDC_ENABLED:
         from utils import jwt as jwtx, oidc_store

@@ -148,7 +148,8 @@
         if (!base) return;
         const now = Date.now();
         const key = event + ':' + base.platform + ':' + base.songId;
-        const data = Object.assign({ event, at: now }, base);
+        const eventId = now.toString(36) + '-' + Math.random().toString(36).slice(2, 14);
+        const data = Object.assign({ event, eventId, at: now }, base);
         const o = extra || {};
         const position = normalizeNumber(o.position, 86400);
         const duration = normalizeNumber(o.duration || song.duration, 86400);

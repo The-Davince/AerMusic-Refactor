@@ -114,8 +114,11 @@ def _send_sync(to_email: str, code: str) -> None:
 
 async def send_code_email(email: str, code: str) -> tuple:
     if not cfg.SMTP_HOST:
-        a(f"mail code: {code} to={email} (SMTP 未配置, 仅写日志)")
-        return True, ""
+        if cfg.SMTP_DEV_LOG_CODE:
+            a(f"mail code: {code} to={email} (SMTP 未配置, 仅开发环境)", "WARN")
+            return True, ""
+        a("mail code send failed: SMTP 未配置", "ERROR")
+        return False, "邮件服务未配置, 请联系管理员"
     try:
         await asyncio.to_thread(_send_sync, email, code)
         a(f"mail code sent: to={email}")

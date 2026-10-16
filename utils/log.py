@@ -12,10 +12,12 @@ from datetime import datetime
 from typing import Optional, Any
 from collections import deque
 
+import config as cfg
+
 _dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
 os.makedirs(_dir, exist_ok=True)
 _lock = threading.Lock()
-_queue: deque = deque()
+_queue: deque = deque(maxlen=cfg.LOG_QUEUE_MAX)
 _stopEvent = threading.Event()
 _threadI: Optional[threading.Thread] = None
 
@@ -34,7 +36,23 @@ def _gen_action_id(raw_request: str) -> str:
 
 def _getLog() -> str:
     today = datetime.now().strftime("%Y%m%d")
-    return os.path.join(_dir, f"{today}.log")
+    base = os.path.join(_dir, f"{today}.log")
+    try:
+        if not os.path.exists(base) or os.path.getsize(base) < cfg.LOG_MAX_BYTES:
+            return base
+    except OSError:
+        return base
+    for i in range(cfg.LOG_MAX_FILES - 1, 0, -1):
+        src = base if i == 1 else f"{base}.{i - 1}"
+        dst = f"{base}.{i}"
+        try:
+            if os.path.exists(dst):
+                os.remove(dst)
+            if os.path.exists(src):
+                os.replace(src, dst)
+        except OSError:
+            pass
+    return base
 
 _LOG_LEVEL_COLORS = {"DEBUG": "96", "INFO": "92", "WARN": "93", "ERROR": "91", "CRITICAL": "1;91", "ACTION": "95"}
 _LOG_KEY_RE = re.compile(r"(?<![A-Za-z0-9_\-])([A-Za-z_][A-Za-z0-9_]*)(=)")
@@ -177,7 +195,7 @@ def a(content: str, level: str = "INFO", log_id: str = None) -> str:
     own = _ctx_log_id.get()
     if log_id is None or (own and log_id == own):
         log_id = cur_log_id()
-    _queue.append((level, log_id, content))
+    _queue.append((level, log_id, _clip(content, 4096)))
     return log_id
 
 
@@ -185,7 +203,7 @@ def b(content: str, request: Any) -> str:
     _onwriter()
     raw = str(request)
     action_id = _gen_action_id(raw)
-    _queue.append(("ACTION", action_id, content))
+    _queue.append(("ACTION", action_id, _clip(content, 4096)))
     return action_id
 
 
@@ -223,12 +241,17 @@ def _get_real_ip(request) -> str:
     peer = _valid(request.client.host) if request.client else None
     if peer:
         import config as _cfg
-        if _in_trusted_proxies(peer, tuple(getattr(_cfg, "TRUSTED_PROXIES", ()) or ())):
+        trusted = _in_trusted_proxies(peer, tuple(getattr(_cfg, "TRUSTED_PROXIES", ()) or ()))
+        edge = _valid(request.headers.get("x-client-realip0", "").strip())
+        if trusted and edge:
+            return edge
+        if trusted:
             xff = request.headers.get("x-forwarded-for")
             if xff:
-                last = _valid(xff.split(",")[-1].strip())
-                if last:
-                    return last
+                for candidate in xff.split(","):
+                    first = _valid(candidate.strip())
+                    if first:
+                        return first
             real = _valid(request.headers.get("x-real-ip"))
             if real:
                 return real

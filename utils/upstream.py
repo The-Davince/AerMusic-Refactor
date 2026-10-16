@@ -1,3 +1,4 @@
+import json
 import time
 from urllib.parse import urlencode
 
@@ -29,7 +30,7 @@ def init() -> None:
     if _client is None:
         _client = httpx.AsyncClient(
             timeout=cfg.UPSTREAM_TIMEOUT,
-            follow_redirects=True,
+            follow_redirects=False,
             limits=Limits(max_connections=cfg.UPSTREAM_MAX_CONNECTIONS,
                           max_keepalive_connections=cfg.UPSTREAM_MAX_KEEPALIVE),
         )
@@ -84,20 +85,13 @@ async def fetch(name: str, qp) -> dict:
     for attempt in range(max(1, cfg.UPSTREAM_RETRIES)):
         t0 = time.time()
         try:
-            resp = await _client.get(url, params=params)
-            log_ext("netease", "GET", url, status=resp.status_code, elapsed_ms=(time.time() - t0) * 1000)
-            if resp.status_code >= 500:
-                last_err = UpstreamError("上游API请求失败")
-                continue
-            if resp.status_code >= 400:
-                raise UpstreamError("上游API请求失败", 502)
-            try:
-                data = resp.json()
-            except ValueError:
-                last_err = UpstreamError("上游响应不是合法JSON")
-                log_ext("netease", "GET", url, status=resp.status_code, resp_body="non-json body", elapsed_ms=(time.time() - t0) * 1000)
-                continue
+            data = await _request_json(url, params)
             break
+        except UpstreamError as error:
+            if error.status == 400:
+                raise
+            last_err = error
+            continue
         except (httpx.TimeoutException, httpx.TransportError) as e:
             last_err = UpstreamError("上游API请求失败")
             log_ext("netease", "GET", url, status=0, resp_body=f"{type(e).__name__}: {e}", elapsed_ms=(time.time() - t0) * 1000)
@@ -127,19 +121,53 @@ async def api_get(path: str, params: dict, ttl: int = 0, base: str = "") -> dict
         hit = cache.get(key)
         if hit is not None:
             return hit
-    t0 = time.time()
-    try:
-        resp = await _client.get(url, params=params)
-    except (httpx.TimeoutException, httpx.TransportError) as e:
-        log_ext("netease", "GET", url, status=0, resp_body=f"{type(e).__name__}: {e}", elapsed_ms=(time.time() - t0) * 1000)
-        raise UpstreamError("上游API请求失败")
-    log_ext("netease", "GET", url, status=resp.status_code, elapsed_ms=(time.time() - t0) * 1000)
-    if resp.status_code >= 400:
-        raise UpstreamError("上游API请求失败", 502)
-    try:
-        data = resp.json()
-    except ValueError:
-        raise UpstreamError("上游响应不是合法JSON")
+    last_error = None
+    for _ in range(max(1, cfg.UPSTREAM_RETRIES)):
+        try:
+            data = await _request_json(url, params)
+            break
+        except UpstreamError as error:
+            last_error = error
+        except (httpx.TimeoutException, httpx.TransportError) as error:
+            last_error = UpstreamError("上游API请求失败")
+    else:
+        raise last_error or UpstreamError("上游API请求失败")
     if ttl > 0 and isinstance(data, (dict, list)):
         cache.put(key, data, ttl)
     return data
+
+
+async def _request_json(url: str, params: dict):
+    t0 = time.time()
+    try:
+        async with _client.stream("GET", url, params=params) as resp:
+            status = resp.status_code
+            if 300 <= status < 400:
+                log_ext("netease", "GET", url, status=status, elapsed_ms=(time.time() - t0) * 1000)
+                raise UpstreamError("上游不接受重定向", 502)
+            if status >= 500:
+                log_ext("netease", "GET", url, status=status, elapsed_ms=(time.time() - t0) * 1000)
+                raise UpstreamError("上游API请求失败")
+            if status >= 400:
+                log_ext("netease", "GET", url, status=status, elapsed_ms=(time.time() - t0) * 1000)
+                raise UpstreamError("上游API请求失败", 502)
+            content_length = resp.headers.get("content-length", "")
+            if content_length.isdigit() and int(content_length) > cfg.UPSTREAM_MAX_RESPONSE_BYTES:
+                raise UpstreamError("上游响应过大", 502)
+            chunks = []
+            total = 0
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > cfg.UPSTREAM_MAX_RESPONSE_BYTES:
+                    raise UpstreamError("上游响应过大", 502)
+                chunks.append(chunk)
+            try:
+                data = json.loads(b"".join(chunks))
+            except (ValueError, UnicodeDecodeError):
+                log_ext("netease", "GET", url, status=status, resp_body="non-json body", elapsed_ms=(time.time() - t0) * 1000)
+                raise UpstreamError("上游响应不是合法JSON")
+            log_ext("netease", "GET", url, status=status, elapsed_ms=(time.time() - t0) * 1000)
+            return data
+    except (httpx.TimeoutException, httpx.TransportError) as error:
+        log_ext("netease", "GET", url, status=0, resp_body=f"{type(error).__name__}: {error}", elapsed_ms=(time.time() - t0) * 1000)
+        raise UpstreamError("上游API请求失败")

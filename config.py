@@ -3,6 +3,7 @@ import os
 import time
 
 APP_NAME = os.environ.get("APP_NAME", "AerMusic")
+APP_ENV = os.environ.get("APP_ENV", "development").strip().lower() or "development"
 
 APP_VERSION = os.environ.get("APP_VERSION") or str(int(time.time()))
 HOST = os.environ.get("HOST", "127.0.0.1")
@@ -25,7 +26,8 @@ PGSQL_CONNECT_TIMEOUT = max(1, int(os.environ.get("PGSQL_CONNECT_TIMEOUT", "5"))
 
 
 SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL_SECONDS", "2592000"))
-SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "True").lower() == "true"
+_secure_cookie = os.environ.get("SESSION_COOKIE_SECURE")
+SESSION_COOKIE_SECURE = (_secure_cookie.lower() == "true") if _secure_cookie is not None else APP_ENV in ("prod", "production")
 
 
 NETEASE_API_BASE = os.environ.get("NETEASE_API_BASE", "http://localhost:3000").rstrip("/")
@@ -37,6 +39,7 @@ UPSTREAM_TIMEOUT = float(os.environ.get("UPSTREAM_TIMEOUT", "10"))
 UPSTREAM_RETRIES = int(os.environ.get("UPSTREAM_RETRIES", "2"))
 UPSTREAM_MAX_CONNECTIONS = int(os.environ.get("UPSTREAM_MAX_CONNECTIONS", "300"))
 UPSTREAM_MAX_KEEPALIVE = int(os.environ.get("UPSTREAM_MAX_KEEPALIVE", "100"))
+UPSTREAM_MAX_RESPONSE_BYTES = max(64 * 1024, int(os.environ.get("UPSTREAM_MAX_RESPONSE_BYTES", str(4 * 1024 * 1024))))
 
 # 上游与本站同机/内网时前端改走 /api/up 代理, 这个是代理端点进程内缓存的秒数(0=不缓存)
 UP_PROXY_TTL = max(0, int(os.environ.get("UP_PROXY_TTL", "120")))
@@ -58,6 +61,7 @@ REDIS_RATE_PREFIX = os.environ.get("REDIS_RATE_PREFIX", "aermusic:recommend:rate
 
 CACHE_DEFAULT = int(os.environ.get("CACHE_DEFAULT", "300"))
 CACHE_MAX_ENTRIES = int(os.environ.get("CACHE_MAX_ENTRIES", "500"))
+CACHE_MAX_BYTES = max(4 * 1024 * 1024, int(os.environ.get("CACHE_MAX_BYTES", str(64 * 1024 * 1024))))
 
 
 MAX_LIMIT = int(os.environ.get("MAX_LIMIT", "100"))
@@ -91,6 +95,11 @@ SMTP_FROM = os.environ.get("SMTP_FROM", "").strip()
 SMTP_USE_SSL = os.environ.get("SMTP_USE_SSL", "True").lower() == "true"
 SMTP_CODE_TTL = max(60, int(os.environ.get("SMTP_CODE_TTL", "300")))
 EMAIL_SEND_COOLDOWN = max(10, int(os.environ.get("EMAIL_SEND_COOLDOWN", "90")))
+SMTP_DEV_LOG_CODE = os.environ.get("SMTP_DEV_LOG_CODE", "false").lower() == "true"
+
+LOG_QUEUE_MAX = max(1000, int(os.environ.get("LOG_QUEUE_MAX", "50000")))
+LOG_MAX_BYTES = max(256 * 1024, int(os.environ.get("LOG_MAX_BYTES", str(20 * 1024 * 1024))))
+LOG_MAX_FILES = max(2, int(os.environ.get("LOG_MAX_FILES", "5")))
 
 
 OIDC_ENABLED = os.environ.get("OIDC_ENABLED", "True").lower() == "true"

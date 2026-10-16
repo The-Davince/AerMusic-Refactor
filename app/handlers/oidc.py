@@ -16,7 +16,7 @@ from app.handlers import _oidc_page
 from app.handlers import auth
 from utils import db, oidc_store, jwt as jwtx
 from utils.log import a, _get_real_ip
-from utils.rate_limit import allow_local
+from utils.rate_limit import allow
 from utils.security import checkPass
 
 router = APIRouter()
@@ -69,7 +69,7 @@ def _html_page(html: str, status: int = 200):
 
 
 def _limit(req: Request, name: str, limit: int, window: int) -> bool:
-    return allow_local(f"oidc_{name}|" + _get_real_ip(req), limit, window)
+    return allow(f"oidc_{name}|" + _get_real_ip(req), limit, window)
 
 
 def _client_lookup(client_id: str):

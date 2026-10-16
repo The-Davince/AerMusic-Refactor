@@ -143,6 +143,13 @@ def _pg_put(conn) -> None:
         _pg_slots.release()
 
 
+def _pg_rollback(conn) -> None:
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+
+
 def _pg_sql(sql: str) -> str:
     return sql.replace("?", "%s")
 
@@ -152,31 +159,40 @@ def _pg_has_id(conn, table: str) -> bool:
     if name in _pg_id_cols:
         return _pg_id_cols[name]
     cur = conn.cursor()
-    cur.execute(
-        "SELECT 1 FROM information_schema.columns "
-        "WHERE table_schema = current_schema() AND table_name = %s AND column_name = 'id'",
-        (name,),
-    )
-    found = cur.fetchone() is not None
-    cur.close()
+    try:
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND table_name = %s AND column_name = 'id'",
+            (name,),
+        )
+        found = cur.fetchone() is not None
+    finally:
+        cur.close()
     _pg_id_cols[name] = found
     return found
 
 
 def _pg_query(sql: str, args: tuple) -> list:
     conn = _pg_get()
+    cur = None
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(_pg_sql(sql), args)
         rows = cur.fetchall()
-        cur.close()
         return [dict(row) for row in rows]
+    except Exception:
+        _pg_rollback(conn)
+        raise
     finally:
+        if cur is not None:
+            cur.close()
+        _pg_rollback(conn)
         _pg_put(conn)
 
 
 def _pg_run(sql: str, args: tuple) -> int:
     conn = _pg_get()
+    cur = None
     try:
         cur = conn.cursor()
         stmt = _pg_sql(sql)
@@ -187,33 +203,47 @@ def _pg_run(sql: str, args: tuple) -> int:
         cur.execute(stmt, args)
         row = cur.fetchone() if want_id else None
         conn.commit()
-        cur.close()
         return (row[0] if row else 0) or 0
+    except Exception:
+        _pg_rollback(conn)
+        raise
     finally:
+        if cur is not None:
+            cur.close()
         _pg_put(conn)
 
 
 def _pg_run_many(sql: str, seq: list) -> None:
     conn = _pg_get()
+    cur = None
     try:
         cur = conn.cursor()
         cur.executemany(_pg_sql(sql), seq)
         conn.commit()
-        cur.close()
+    except Exception:
+        _pg_rollback(conn)
+        raise
     finally:
+        if cur is not None:
+            cur.close()
         _pg_put(conn)
 
 
 def _pg_run_rowcount(sql: str, args: tuple) -> int:
     conn = _pg_get()
+    cur = None
     try:
         cur = conn.cursor()
         cur.execute(_pg_sql(sql), args)
         n = cur.rowcount
         conn.commit()
-        cur.close()
         return n
+    except Exception:
+        _pg_rollback(conn)
+        raise
     finally:
+        if cur is not None:
+            cur.close()
         _pg_put(conn)
 
 
@@ -242,8 +272,11 @@ def connect(path: str) -> None:
 
 
 def close() -> None:
+    global _path, _backend, _pg_pool, _pg_slots, _pg_id_cols
     if _pg_pool is not None:
         _pg_pool.closeall()
+        _pg_pool = None
+        _pg_slots = None
     with _conns_lock:
         for conn in list(_conns):
             try:
@@ -253,6 +286,8 @@ def close() -> None:
             _conns.discard(conn)
         _path = None
     _local.conn = None
+    _backend = "sqlite"
+    _pg_id_cols = {}
 
 
 def query(sql: str, args: tuple = ()) -> list:
@@ -302,5 +337,9 @@ def run_many(sql: str, seq: list) -> None:
     if _backend == "pg":
         return _pg_run_many(sql, seq)
     conn = _conn()
-    conn.executemany(sql, seq)
-    conn.commit()
+    try:
+        conn.executemany(sql, seq)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise

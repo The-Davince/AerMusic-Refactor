@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from app.handlers.auth import currentUser, readJsonBody
 from utils import db
 from utils.log import a, get_log_id, _get_real_ip
-from utils.rate_limit import allow_local
+from utils.rate_limit import allow
 
 router = APIRouter()
 
@@ -19,6 +19,8 @@ SHARE_MAX_PER_IP = 120
 SHARE_WINDOW_SECONDS = 60
 SHARE_MAX_SONGS = 2000
 _UUID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+_SAFE_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+_SAFE_PLATFORM_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 
 
 def _resp(req, code, msg, status=200, data=None):
@@ -42,6 +44,62 @@ def _findPlaylist(playlists, uuid):
         if isinstance(item, dict) and str(item.get("uuid") or "") == uuid:
             return item
     return None
+
+
+def _safe_share_text(value, limit=500):
+    return re.sub(r"[\x00-\x1f\x7f\"'<>`]", "", str(value or ""))[:limit]
+
+
+def _safe_share_id(value):
+    if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 999999999999999:
+        return value
+    if isinstance(value, str) and re.fullmatch(r"\d{1,15}", value):
+        return value
+    return ""
+
+
+def _safe_share_song(song):
+    if not isinstance(song, dict):
+        return None
+    result = {}
+    for key in ("id", "name", "artist", "album", "dt", "duration", "cover", "picUrl", "url", "platform", "platformName", "platformColor", "albumId"):
+        value = song.get(key)
+        if key in ("id", "albumId"):
+            if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 999999999999999:
+                result[key] = value
+            elif isinstance(value, str) and re.fullmatch(r"\d{1,15}", value):
+                result[key] = value
+        elif key in ("dt", "duration"):
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 86400000:
+                result[key] = value
+        elif key == "platform":
+            text = str(value or "")
+            result[key] = text if _SAFE_PLATFORM_RE.match(text) else "cloudmusic"
+        elif key == "platformColor":
+            text = str(value or "")
+            result[key] = text if _SAFE_COLOR_RE.match(text) else "#ffffff"
+        elif key in ("cover", "picUrl", "url"):
+            text = str(value or "")[:1000]
+            result[key] = text if re.match(r"^https?://[^\s<>\"']+$", text, re.IGNORECASE) else ""
+        elif value is not None:
+            result[key] = _safe_share_text(value, 500)
+    for key in ("ar", "artists"):
+        value = song.get(key)
+        if isinstance(value, list):
+            result[key] = [{"id": _safe_share_id(item.get("id")), "name": _safe_share_text(item.get("name"), 120)}
+                           for item in value[:20] if isinstance(item, dict)]
+    album = song.get("al")
+    if isinstance(album, dict):
+        album_pic = str(album.get("picUrl") or "")[:1000]
+        result["al"] = {"id": _safe_share_id(album.get("id")), "name": _safe_share_text(album.get("name"), 200),
+                        "picUrl": album_pic if re.match(r"^https?://[^\s<>\"']+$", album_pic, re.IGNORECASE) else ""}
+    return result
+
+
+def _safe_share_songs(songs):
+    if not isinstance(songs, list):
+        return []
+    return [item for item in (_safe_share_song(song) for song in songs[:SHARE_MAX_SONGS]) if item]
 
 
 @router.get("/library")
@@ -121,7 +179,7 @@ async def putShare(req: Request, uuid: str):
 async def getShare(req: Request, uuid: str):
     if not _UUID_RE.match(uuid):
         return _resp(req, 400, "参数不合法", 400)
-    if not allow_local("plshare|" + _get_real_ip(req), SHARE_MAX_PER_IP, SHARE_WINDOW_SECONDS):
+    if not allow("plshare|" + _get_real_ip(req), SHARE_MAX_PER_IP, SHARE_WINDOW_SECONDS):
         return _resp(req, 429, "请求过于频繁", 429)
     row = await asyncio.to_thread(db.get, "SELECT userid FROM playlist_shares WHERE uuid = ?", (uuid,))
     if not row:
@@ -133,8 +191,25 @@ async def getShare(req: Request, uuid: str):
     songs = pl.get("songs")
     data = {
         "uuid": uuid,
-        "name": str(pl.get("name") or "")[:80],
-        "cover": str(pl.get("cover") or "")[:500],
-        "songs": songs[:SHARE_MAX_SONGS] if isinstance(songs, list) else [],
+        "name": _safe_share_text(pl.get("name"), 80),
+        "cover": _safe_share_song({"cover": pl.get("cover")}).get("cover", ""),
+        "songs": _safe_share_songs(songs),
     }
     return _resp(req, 0, "ok", data=data)
+
+
+@router.delete("/library/share/{uuid}")
+async def deleteShare(req: Request, uuid: str):
+    user = currentUser(req)
+    if not user:
+        return _resp(req, 401, "未登录", 401)
+    if not _UUID_RE.match(uuid):
+        return _resp(req, 400, "参数不合法", 400)
+    removed = await asyncio.to_thread(
+        db.run_rowcount,
+        "DELETE FROM playlist_shares WHERE uuid = ? AND userid = ?",
+        (uuid, user["id"]),
+    )
+    if not removed:
+        return _resp(req, 404, "分享不存在或无权限", 404)
+    return _resp(req, 0, "已取消分享", data={"uuid": uuid})

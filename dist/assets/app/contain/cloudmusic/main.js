@@ -57,6 +57,7 @@ const CloudMusicPlatform = {
         recommendProfileAt: 0,
         recommendProfilePromise: null,
         recommendProfileVersion: 0,
+        recommendSessionId: null,
     },
 
     _shuffle(arr) {
@@ -130,6 +131,88 @@ const CloudMusicPlatform = {
         hb.usedSeeds = null;
     },
 
+    _recommendSessionId() {
+        const hb = this._heartbeat;
+        if (hb.recommendSessionId) return hb.recommendSessionId;
+        let value = '';
+        try { value = localStorage.getItem('AerMusic_Recommend_Session') || ''; } catch (e) {}
+        if (!/^[A-Za-z0-9_-]{8,80}$/.test(value)) {
+            value = `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+            try { localStorage.setItem('AerMusic_Recommend_Session', value); } catch (e) {}
+        }
+        hb.recommendSessionId = value;
+        return value;
+    },
+
+    _localRecommendProfile() {
+        const app = window.app || {};
+        const favorites = Array.isArray(app.favoriteSongs) ? app.favoriteSongs : [];
+        const ids = [];
+        const keys = [];
+        const recentIds = [];
+        const recentKeys = [];
+        const likedArtists = [];
+        const albums = [];
+        const favoriteAlbums = [];
+        const add = (song, recent = false, favorite = false) => {
+            if (!song || typeof song !== 'object') return;
+            const raw = song.rawSong && typeof song.rawSong === 'object' ? song.rawSong : song;
+            const id = this._songId(raw);
+            if (!id || !/^\d{1,15}$/.test(id)) return;
+            const platform = raw.platform || this.INFO.ID;
+            if (favorite) {
+                if (!ids.includes(id)) ids.push(id);
+                keys.push(`${platform}:id:${id}`);
+            }
+            if (recent && !recentIds.includes(id)) recentIds.push(id);
+            if (recent) recentKeys.push(`${platform}:id:${id}`);
+            const artists = Array.isArray(raw.ar) ? raw.ar : (Array.isArray(raw.artists) ? raw.artists : []);
+            artists.slice(0, 4).forEach(artist => {
+                const artistId = this._songId(artist);
+                const name = typeof artist === 'string' ? artist : artist?.name;
+                if (artistId || name) likedArtists.push({ id: artistId, name: name || '', platform });
+            });
+            const album = raw.al || raw.album || {};
+            const albumId = this._songId(album?.id || raw.albumId);
+            const albumName = album?.name || (typeof raw.album === 'string' ? raw.album : '');
+            if (albumId || albumName) {
+                const value = { id: albumId, name: albumName, platform };
+                albums.push(value);
+                if (favorite) favoriteAlbums.push(value);
+            }
+        };
+        favorites.slice(0, 80).forEach(song => add(song, false, true));
+        const playlist = Array.isArray(app.playlist) ? app.playlist : [];
+        playlist.slice(Math.max(0, (app.currentIndex || 0) - 8), (app.currentIndex || 0) + 1).forEach(song => add(song, true));
+        const playlistSongs = [];
+        (Array.isArray(app.userPlaylists) ? app.userPlaylists : []).slice(0, 8).forEach(item => {
+            if (item && Array.isArray(item.songs)) playlistSongs.push(...item.songs.slice(0, 20));
+        });
+        playlistSongs.slice(0, 80).forEach(song => add(song));
+        let historySongs = [];
+        try {
+            const values = JSON.parse(localStorage.getItem('AerMusic_History') || '[]');
+            if (Array.isArray(values)) historySongs = values.slice(0, 50);
+        } catch (e) {}
+        historySongs.forEach(song => add(song, true));
+        let dislikedIds = [];
+        try {
+            const values = JSON.parse(localStorage.getItem('AerMusic_ReduceRecommend_Songs') || '[]');
+            if (Array.isArray(values)) dislikedIds = values.filter(value => /^\d{1,15}$/.test(String(value).split(':id:').pop())).slice(-100).map(value => String(value).split(':id:').pop());
+        } catch (e) {}
+        return {
+            favorites: { ids: ids.slice(0, 40), keys: [...new Set(keys)].slice(0, 40) },
+            recentIds: recentIds.slice(-20),
+            recentKeys: [...new Set(recentKeys)].slice(-20),
+            likedArtists: likedArtists.slice(0, 40),
+            albums: albums.slice(0, 40),
+            favoriteAlbums: favoriteAlbums.slice(0, 40),
+            playlistSongs: playlistSongs.slice(0, 80),
+            historySongs: historySongs.slice(0, 50),
+            behavior: { dislikedIds, dislikedKeys: dislikedIds.map(id => `${this.INFO.ID}:id:${id}`) },
+        };
+    },
+
     _recommendSignals() {
         const profile = this._heartbeat.recommendProfile || {};
         const app = window.app || {};
@@ -142,7 +225,7 @@ const CloudMusicPlatform = {
         const recentIds = ids(profile.recentKeys || profile.recentIds);
         const favoriteValues = Array.isArray(profile.favorites) ? profile.favorites : (profile.favorites?.keys || profile.favorites?.ids);
         const favoriteIds = ids(favoriteValues);
-        const favoriteAlbums = ids(profile.albums);
+        const favoriteAlbums = ids(profile.favoriteAlbums);
         const likedArtists = ids(profile.likedArtists);
         const behavior = profile.behavior || {};
         const behaviorSongs = new Map((Array.isArray(behavior.songs) ? behavior.songs : []).map(item => [item.key || this._songKey(item), Number(item.score) || 0]).filter(item => item[0]));
@@ -227,7 +310,8 @@ const CloudMusicPlatform = {
     _behaviorScore(scores, keys, limit) {
         let raw = 0;
         keys.forEach(key => {
-            if (key) raw = Math.max(raw, scores.get(key) || 0);
+            const value = key ? Number(scores.get(key) || 0) : 0;
+            if (Number.isFinite(value) && (!Number.isFinite(raw) || Math.abs(value) > Math.abs(raw) || (Math.abs(value) === Math.abs(raw) && value > raw))) raw = value;
         });
         const scaled = raw < 0 ? raw : Math.log2(1 + raw);
         return Math.max(-limit, Math.min(limit, scaled));
@@ -554,6 +638,20 @@ const CloudMusicPlatform = {
         try {
             const params = { limit };
             if (seedId) params.seed = seedId;
+            const app = window.app || {};
+            const ids = [];
+            const addId = value => {
+                const id = this._songId(value);
+                if (/^\d{1,15}$/.test(id) && !ids.includes(id)) ids.push(id);
+            };
+            addId(seedId);
+            const playlist = Array.isArray(app.playlist) ? app.playlist : [];
+            playlist.slice(Math.max(0, (app.currentIndex || 0) - 4), (app.currentIndex || 0) + 1).forEach(addId);
+            (Array.isArray(app.favoriteSongs) ? app.favoriteSongs : []).slice(0, 4).forEach(addId);
+            if (ids.length > 1) params.ids = ids.slice(0, 8).join(',');
+            params.session_id = this._recommendSessionId();
+            params.familiarity = 0.5;
+            params.profile = JSON.stringify(this._localRecommendProfile());
             const res = await axios.get('/api/recommend/get', { params });
             const songs = res.data && res.data.data ? res.data.data.songs : null;
             return Array.isArray(songs) ? songs : [];
@@ -619,7 +717,7 @@ const CloudMusicPlatform = {
                     const trimmed = line.trim();
                     if (!trimmed || trimmed.startsWith('{')) continue;
                     if (isYrc) { const m = trimmed.match(/^\[(\d+),(\d+)\]/); if (m) return parseInt(m[1]); }
-                    else { const m = trimmed.match(/\[(\d+):(\d+)[.:](\d+)\]/); if (m) return (parseInt(m[1]) * 60 + parseInt(m[2])) * 1000 + parseInt(m[3]); }
+                    else { const m = trimmed.match(/\[(\d+):(\d+)(?:[.:](\d{1,3}))?\]/); if (m) return (parseInt(m[1]) * 60 + parseInt(m[2])) * 1000 + parseInt((m[3] || '').padEnd(3, '0') || '0'); }
                 }
                 return 8000;
             };

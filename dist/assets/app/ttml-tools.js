@@ -18,9 +18,9 @@ class TtmlTools {
     }
 
     _lrcToTtmlCore(originalLrc, translatedLrc, romajiLrc) {
-        const originalLines = this._parseLrc(originalLrc);
-        const translatedLines = this._parseLrc(translatedLrc);
-        const romajiLines = this._parseLrc(romajiLrc);
+        const originalLines = this._parseLrc(originalLrc).filter(line => !line.isMeta);
+        const translatedLines = this._parseLrc(translatedLrc).filter(line => !line.isMeta);
+        const romajiLines = this._parseLrc(romajiLrc).filter(line => !line.isMeta);
         
         
         if (originalLines.length === 0 && translatedLines.length === 0 && romajiLines.length === 0) {
@@ -54,6 +54,7 @@ class TtmlTools {
         if (originalLines.length > 0) {
             
             const usedRomaji = new Set();
+            const usedTranslations = new Set();
             
             for (let i = 0; i < originalLines.length; i++) {
                 const line = originalLines[i];
@@ -77,7 +78,7 @@ class TtmlTools {
                     }
                 }
                 
-                ttml += `<p begin="${this._formatTime(line.time)}" end="${this._formatTime(line.time)}" ttm:agent="v1" itunes:key="L${i + 1}">`;
+                ttml += `<p begin="${this._formatTime(line.time)}" end="${this._formatTime(endTime)}" ttm:agent="v1" itunes:key="L${i + 1}">`;
                 
                 
                 ttml += `<span>${this._escapeXml(line.text)}</span>`;
@@ -85,6 +86,23 @@ class TtmlTools {
                 if (romaji) {
                     ttml += `<span ttm:role="x-roman">${this._escapeXml(romaji.text)}</span>`;
                     usedRomaji.add(romaIndex);
+                }
+
+                let translation = null;
+                let bestTranslationDiff = Infinity;
+                let translationIndex = -1;
+                for (let j = 0; j < translatedLines.length; j++) {
+                    if (usedTranslations.has(j)) continue;
+                    const diff = Math.abs(translatedLines[j].time - line.time);
+                    if (diff < 500 && diff < bestTranslationDiff) {
+                        bestTranslationDiff = diff;
+                        translation = translatedLines[j];
+                        translationIndex = j;
+                    }
+                }
+                if (translation) {
+                    ttml += `<span ttm:role="x-translation" xml:lang="zh-CN">${this._escapeXml(translation.text)}</span>`;
+                    usedTranslations.add(translationIndex);
                 }
                 
                 ttml += `</p>`;
@@ -105,7 +123,7 @@ class TtmlTools {
                 const nextLine = allLines[i + 1];
                 const endTime = nextLine ? nextLine.time : line.time + 5000;
                 
-                ttml += `<p begin="${this._formatTime(line.time)}" end="${this._formatTime(line.time)}" ttm:agent="v1" itunes:key="L${i + 1}">`;
+                ttml += `<p begin="${this._formatTime(line.time)}" end="${this._formatTime(endTime)}" ttm:agent="v1" itunes:key="L${i + 1}">`;
                 
                 if (line.type === 'translation') {
                     ttml += `<span ttm:role="x-translation" xml:lang="zh-CN">${this._escapeXml(line.text)}</span>`;
@@ -133,8 +151,11 @@ class TtmlTools {
             const yrcLines = [];
             
             for (const line of lines) {
-                const yrcLine = this._convertKrcLineToYrc(line);
-                if (yrcLine) yrcLines.push(yrcLine);
+                const parsed = this._parseKrcLine(line);
+                if (parsed && !this._isMetaText(parsed.words.map(word => word.text).join(''))) {
+                    const yrcLine = this._convertKrcLineToYrc(line);
+                    if (yrcLine) yrcLines.push(yrcLine);
+                }
             }
             
             return yrcLines.join('\n');
@@ -152,8 +173,11 @@ class TtmlTools {
             const krcLines = [];
             
             for (const line of lines) {
-                const krcLine = this._convertYrcLineToKrc(line);
-                if (krcLine) krcLines.push(krcLine);
+                const parsed = this._parseYrcLine(line);
+                if (parsed && !this._isMetaText(parsed.words.map(word => word.text).join(''))) {
+                    const krcLine = this._convertYrcLineToKrc(line);
+                    if (krcLine) krcLines.push(krcLine);
+                }
             }
             
             return krcLines.join('\n');
@@ -172,7 +196,7 @@ class TtmlTools {
             
             for (const line of lines) {
                 const parsed = this._parseKrcLine(line);
-                if (parsed) {
+                if (parsed && !this._isMetaText(parsed.words.map(word => word.text).join(''))) {
                     const fullText = parsed.words.map(word => word.text).join('');
                     const lrcTime = this._formatLrcTime(parsed.startTime);
                     lrcLines.push(`[${lrcTime}]${fullText}`);
@@ -195,7 +219,7 @@ class TtmlTools {
             
             for (const line of lines) {
                 const parsed = this._parseYrcLine(line);
-                if (parsed) {
+                if (parsed && !this._isMetaText(parsed.words.map(word => word.text).join(''))) {
                     const fullText = parsed.words.map(word => word.text).join('');
                     const lrcTime = this._formatLrcTime(parsed.startTime);
                     lrcLines.push(`[${lrcTime}]${fullText}`);
@@ -222,7 +246,7 @@ class TtmlTools {
     lrcToKrc(args) {
         const lrcText = String(args.LRC_TEXT || "");
         try {
-            const lines = this._parseLrc(lrcText);
+            const lines = this._parseLrc(lrcText).filter(line => !line.isMeta);
             const durations = this._lrcLineDurations(lines);
             return lines.map((line, i) => {
                 const head = `[${line.time},${durations[i]}]`;
@@ -238,7 +262,7 @@ class TtmlTools {
     lrcToYrc(args) {
         const lrcText = String(args.LRC_TEXT || "");
         try {
-            const lines = this._parseLrc(lrcText);
+            const lines = this._parseLrc(lrcText).filter(line => !line.isMeta);
             const durations = this._lrcLineDurations(lines);
             return lines.map((line, i) => {
                 const head = `[${line.time},${durations[i]}]`;
@@ -354,12 +378,12 @@ class TtmlTools {
             
             for (const line of yrcLines) {
                 const parsed = this._parseYrcLine(line);
-                if (parsed) parsedLines.push(parsed);
+                if (parsed && !this._isMetaText(parsed.words.map(word => word.text).join(''))) parsedLines.push(parsed);
             }
             
             
-            const translationLines = this._parseLrc(translatedLrc);
-            const romajiLines = this._parseLrc(romajiLrc);
+            const translationLines = this._parseLrc(translatedLrc).filter(line => !line.isMeta);
+            const romajiLines = this._parseLrc(romajiLrc).filter(line => !line.isMeta);
             
             return this._generateWordByWordTtmlWithAll(parsedLines, translationLines, romajiLines);
         } catch (error) {
@@ -381,12 +405,12 @@ class TtmlTools {
             
             for (const line of krcLines) {
                 const parsed = this._parseKrcLine(line);
-                if (parsed) parsedLines.push(parsed);
+                if (parsed && !this._isMetaText(parsed.words.map(word => word.text).join(''))) parsedLines.push(parsed);
             }
             
             
-            const translationLines = this._parseLrc(translatedLrc);
-            const romajiLines = this._parseLrc(romajiLrc);
+            const translationLines = this._parseLrc(translatedLrc).filter(line => !line.isMeta);
+            const romajiLines = this._parseLrc(romajiLrc).filter(line => !line.isMeta);
             
             return this._generateWordByWordTtmlWithAll(parsedLines, translationLines, romajiLines);
         } catch (error) {
@@ -412,7 +436,7 @@ class TtmlTools {
             
             for (const line of qrcLines) {
                 const parsed = this._parseQrcLine(line);
-                if (parsed) parsedLines.push(parsed);
+                if (parsed && !this._isMetaText(parsed.words.map(word => word.text).join(''))) parsedLines.push(parsed);
             }
             
             this._expandCharLevelWords(parsedLines);
@@ -490,7 +514,7 @@ class TtmlTools {
             if (text === '//' || text.startsWith('//')) return false;
             
             if (/^(QQ音乐|TME)/.test(text)) return false;
-            return true;
+            return !line.isMeta;
         });
     }
 
@@ -522,42 +546,49 @@ class TtmlTools {
     }
 
     
+    _isMetaText(text) {
+        return /^(?:作词|作曲|编曲|制作人|混音|母带|监制|和声|吉他|贝斯|鼓手|录音|滚动歌词贡献者|翻译歌词贡献者)\s*[:：]/.test(String(text || '').trim());
+    }
+
     _parseLrc(lrcText) {
         const lines = lrcText.split('\n');
         const result = [];
+        const metaSeen = new Set();
+        const metaKey = (text) => String(text || '').replace(/\s+/g, ' ').trim().replace(/：/g, ':').replace(/\s*:\s*/g, ':').toLocaleLowerCase();
+        const isMeta = (text) => this._isMetaText(text);
         
         for (const line of lines) {
             const lineTrimmed = line.trim();
             if (!lineTrimmed) continue;
             
             
-            const timeMatch = lineTrimmed.match(/^\[(\d+):(\d+)(?:[.:](\d+))?\]/);
+            const timePrefix = lineTrimmed.match(/^((?:\[\d+:\d+(?:[.:]\d+)?\]\s*)+)/);
+            const timeMatches = timePrefix ? [...timePrefix[1].matchAll(/\[(\d+):(\d+)(?:[.:](\d+))?\]/g)] : [];
             const timeMatch2 = lineTrimmed.match(/^\[(\d+),(\d+)\]/);
-            
-            let totalMs = 0;
-            let text = '';
-            
-            if (timeMatch) {
-                
-                const minutes = parseInt(timeMatch[1]);
-                const seconds = parseInt(timeMatch[2]);
-                const frac = timeMatch[3] ? parseFloat("0." + timeMatch[3]) : 0;
-                
-                totalMs = (minutes * 60 + seconds) * 1000 + Math.round(frac * 1000);
-                
-                text = lineTrimmed.replace(/^\[\d+:\d+(?:[.:]\d+)?\]/, '').trim();
-            } else if (timeMatch2) {
-                
-                totalMs = parseInt(timeMatch2[1]);
-                text = lineTrimmed.replace(/^\[\d+,\d+\]/, '').trim();
-            }
-            
-            
-            if (text || timeMatch || timeMatch2) {
+            const addLine = (totalMs, text) => {
+                if (isMeta(text)) {
+                    const key = metaKey(text);
+                    if (key && metaSeen.has(key)) return;
+                    if (key) metaSeen.add(key);
+                }
                 result.push({
                     time: totalMs,
-                    text: text
+                    text: text,
+                    isMeta: isMeta(text)
                 });
+            };
+
+            if (timeMatches.length > 0) {
+                const last = timeMatches[timeMatches.length - 1];
+                const text = lineTrimmed.slice(timePrefix[1].length).trim();
+                timeMatches.forEach(match => {
+                    const minutes = parseInt(match[1]);
+                    const seconds = parseInt(match[2]);
+                    const frac = match[3] ? parseFloat("0." + match[3]) : 0;
+                    addLine((minutes * 60 + seconds) * 1000 + Math.round(frac * 1000), text);
+                });
+            } else if (timeMatch2) {
+                addLine(parseInt(timeMatch2[1]), lineTrimmed.replace(/^\[\d+,\d+\]/, '').trim());
             }
         }
         
@@ -567,11 +598,11 @@ class TtmlTools {
     }
 
     _parseKrcLine(line) {
-        let lineMatch = line.match(/^\[(\d+),(\d+)\](.+)/);
+        let lineMatch = line.match(/^\[(\d+),(\d+)\](.*)/);
         let hasLineDuration = true;
         
         if (!lineMatch) {
-            lineMatch = line.match(/^\[(\d+)\](.+)/);
+            lineMatch = line.match(/^\[(\d+)\](.*)/);
             hasLineDuration = false;
         }
         
@@ -588,7 +619,7 @@ class TtmlTools {
             wordSection = lineMatch[2];
         }
         
-        const wordMatches = [...wordSection.matchAll(/<(\d+),(\d+)(?:,\d+)?>([^<]+)/g)];
+        const wordMatches = [...wordSection.matchAll(/<(\d+),(\d+)(?:,\d+)?>([\s\S]*?)(?=<\d+,\d+(?:,\d+)?>(?:.|$)|$)/g)];
         const words = wordMatches.map(match => {
             const offset = parseInt(match[1]);
             const wordDuration = parseInt(match[2]);
@@ -641,7 +672,7 @@ class TtmlTools {
             wordSection = lineMatch[2];
         }
         
-        const wordMatches = [...wordSection.matchAll(/\((\d+),(\d+)(?:,\d+)?\)([^\(]+)/g)];
+        const wordMatches = [...wordSection.matchAll(/\((\d+),(\d+)(?:,\d+)?\)([\s\S]*?)(?=\(\d+,\d+(?:,\d+)?\)(?:.|$)|$)/g)];
         const words = wordMatches.map(match => {
             const absoluteTime = parseInt(match[1]);
             const wordDuration = parseInt(match[2]);
@@ -709,33 +740,34 @@ class TtmlTools {
         const cleanText = wordSection.replace(/\(\s*\d+\s*,\s*\d+\s*\)/g, '').trim();
         if (cleanText === '') return null; 
 
-        const parts = wordSection.split(/\(\s*(\d+)\s*,\s*(\d+)\s*\)/);
-        
         const words = [];
-        let i = 0;
-        while (i < parts.length) {
-            const currentText = parts[i];
-            i++;
-            if (i + 1 < parts.length) {
-                const absoluteTime = parseInt(parts[i]);
-                const wordDuration = parseInt(parts[i + 1]);
-                i += 2;
-                
-                if (!hasLineDuration) {
-                    duration = Math.max(duration, absoluteTime - startTime + wordDuration);
-                }
-                
-                if (currentText !== '') {
-                    words.push({
-                        absoluteTime: absoluteTime,
-                        duration: wordDuration,
-                        text: currentText,
-                        offset: absoluteTime - startTime
-                    });
-                }
-            } else {
-                break;
-            }
+        const markerRe = /\(\s*(\d+)\s*,\s*(\d+)\s*\)/g;
+        const markers = [...wordSection.matchAll(markerRe)];
+        const addWord = (marker, text) => {
+            if (text === '') return;
+            const absoluteTime = parseInt(marker[1]);
+            const wordDuration = parseInt(marker[2]);
+            if (!hasLineDuration) duration = Math.max(duration, absoluteTime - startTime + wordDuration);
+            words.push({
+                absoluteTime: absoluteTime,
+                duration: wordDuration,
+                text: text,
+                offset: absoluteTime - startTime
+            });
+        };
+        if (markers.length > 0) {
+            const markerAfterText = wordSection.slice(0, markers[0].index).trim() !== '';
+            markers.forEach((marker, index) => {
+                const textStart = markerAfterText
+                    ? (index > 0 ? markers[index - 1].index + markers[index - 1][0].length : 0)
+                    : marker.index + marker[0].length;
+                const textEnd = markerAfterText
+                    ? marker.index
+                    : (index + 1 < markers.length ? markers[index + 1].index : wordSection.length);
+                addWord(marker, wordSection.slice(textStart, textEnd));
+            });
+        } else if (wordSection.trim()) {
+            words.push({ absoluteTime: startTime, duration: duration || 3000, text: wordSection, offset: 0 });
         }
         
         
@@ -807,6 +839,7 @@ class TtmlTools {
 
         
         const usedRomaji = new Set();
+        const usedTranslations = new Set();
         
         
         originalLines.forEach((line, lineIndex) => {
@@ -862,6 +895,23 @@ class TtmlTools {
                 ttml += `<span ttm:role="x-roman">${this._escapeXml(romaji.text)}</span>`;
                 usedRomaji.add(romaIndex);
             }
+
+            let translation = null;
+            let bestTranslationDiff = Infinity;
+            let translationIndex = -1;
+            for (let i = 0; i < translationLines.length; i++) {
+                if (usedTranslations.has(i)) continue;
+                const diff = Math.abs(translationLines[i].time - lineStart);
+                if (diff < 500 && diff < bestTranslationDiff) {
+                    bestTranslationDiff = diff;
+                    translation = translationLines[i];
+                    translationIndex = i;
+                }
+            }
+            if (translation) {
+                ttml += `<span ttm:role="x-translation" xml:lang="zh-CN">${this._escapeXml(translation.text)}</span>`;
+                usedTranslations.add(translationIndex);
+            }
             
             ttml += `</p>`;
         });
@@ -874,6 +924,9 @@ class TtmlTools {
     }
 
     _formatTime(ms) {
+        ms = Number(ms);
+        if (!Number.isFinite(ms)) ms = 0;
+        ms = Math.max(0, ms);
         const totalSeconds = ms / 1000;
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;

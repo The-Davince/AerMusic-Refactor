@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import hashlib
 import json
 import re
 import secrets
@@ -14,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 import config as cfg
 from utils import db, mailer, oidc_store, oss, security
 from utils.log import a, get_log_id, _get_real_ip
-from utils.rate_limit import allow_local
+from utils.rate_limit import allow
 from utils.validate import checkUsername, checkPassword, checkRegPassword, checkNickname, checkEmail
 
 router = APIRouter()
@@ -48,12 +49,17 @@ async def readJsonBody(req: Request, limit: int):
     cl = req.headers.get("content-length")
     if cl and cl.isdigit() and int(cl) > limit:
         return None, JSONResponse(status_code=413, content={"code": 413, "msg": "请求体太大", "data": None, "logId": get_log_id(req)})
+    chunks = []
+    size = 0
     try:
-        raw = await req.body()
+        async for chunk in req.stream():
+            size += len(chunk)
+            if size > limit:
+                return None, JSONResponse(status_code=413, content={"code": 413, "msg": "请求体太大", "data": None, "logId": get_log_id(req)})
+            chunks.append(chunk)
     except Exception:
         return None, JSONResponse(status_code=400, content={"code": 400, "msg": "请求体读取失败", "data": None, "logId": get_log_id(req)})
-    if len(raw) > limit:
-        return None, JSONResponse(status_code=413, content={"code": 413, "msg": "请求体太大", "data": None, "logId": get_log_id(req)})
+    raw = b"".join(chunks)
     try:
         body = json.loads(raw)
     except Exception:
@@ -89,6 +95,10 @@ def _extractUsername(body) -> str:
 def _extractEmail(body) -> str:
     e = body.get("email")
     return e.strip().lower() if isinstance(e, str) else ""
+
+
+def _emailRateKey(prefix: str, email: str) -> str:
+    return prefix + hashlib.sha256(email.encode("utf-8")).hexdigest()
 
 
 def _userPublic(user) -> dict:
@@ -138,11 +148,11 @@ async def email_code(req: Request):
         return _resp(req, 400, "邮箱格式不正确", 400)
     if db.get("SELECT id FROM users WHERE email = ?", (email,)):
         return _resp(req, 409, "该邮箱已被注册", 409)
-    if not allow_local("ecode_cool|" + email, 1, cfg.EMAIL_SEND_COOLDOWN):
+    if not allow(_emailRateKey("ecode_cool|", email), 1, cfg.EMAIL_SEND_COOLDOWN):
         return _resp(req, 429, "验证码刚发过, 请稍后再试", 429)
-    if not allow_local("ecode_mail|" + email, EMAIL_CODE_MAX_PER_EMAIL, EMAIL_CODE_WINDOW_SECONDS):
+    if not allow(_emailRateKey("ecode_mail|", email), EMAIL_CODE_MAX_PER_EMAIL, EMAIL_CODE_WINDOW_SECONDS):
         return _resp(req, 429, "该邮箱发送次数过多, 请稍后再试", 429)
-    if not allow_local("ecode_ip|" + _get_real_ip(req), EMAIL_CODE_MAX_PER_IP, EMAIL_CODE_WINDOW_SECONDS):
+    if not allow("ecode_ip|" + _get_real_ip(req), EMAIL_CODE_MAX_PER_IP, EMAIL_CODE_WINDOW_SECONDS):
         return _resp(req, 429, "发送过于频繁, 请稍后再试", 429)
     code = "".join(str(secrets.randbelow(10)) for _ in range(6))
     mailer.save_code(email, "register", code, cfg.SMTP_CODE_TTL)
@@ -157,7 +167,7 @@ async def email_code(req: Request):
 @router.post("/user/register")
 async def register(req: Request):
     log_id = get_log_id(req)
-    if not allow_local("reg|" + _get_real_ip(req), REGISTER_MAX_PER_IP, REGISTER_WINDOW_SECONDS):
+    if not allow("reg|" + _get_real_ip(req), REGISTER_MAX_PER_IP, REGISTER_WINDOW_SECONDS):
         a(f"user register rate limited: log_id={log_id}", "WARN", log_id)
         return _resp(req, 429, "注册过于频繁, 请稍后再试", 429)
     body, err = await readJsonBody(req, MAX_AUTH_BODY)
@@ -209,7 +219,7 @@ async def register(req: Request):
 @router.post("/user/login")
 async def login(req: Request):
     log_id = get_log_id(req)
-    if not allow_local("login|" + _get_real_ip(req), LOGIN_MAX_PER_IP, LOGIN_WINDOW_SECONDS):
+    if not allow("login|" + _get_real_ip(req), LOGIN_MAX_PER_IP, LOGIN_WINDOW_SECONDS):
         a(f"user login rate limited: log_id={log_id}", "WARN", log_id)
         return _resp(req, 429, "登录过于频繁, 请稍后再试", 429)
     body, err = await readJsonBody(req, MAX_AUTH_BODY)
@@ -285,7 +295,7 @@ async def avatar_upload(req: Request):
     user = currentUser(req)
     if not user:
         return _resp(req, 401, "未登录", 401)
-    if not allow_local("avatar|" + str(user["id"]), 30, 600):
+    if not allow("avatar|" + str(user["id"]), 30, 600):
         return _resp(req, 429, "上传过于频繁, 请稍后再试", 429)
     body, err = await readJsonBody(req, MAX_AVATAR_BODY)
     if err:
