@@ -787,9 +787,10 @@ const CloudMusicPlatform = {
         const quality = options.quality || 'lossless';
         try {
             const res = await axios.get(this.INFO.API.url, {
-                params: { id: songId, q: quality, w: 1 }
+                params: { id: songId, q: quality, w: 1, ...(options.refresh ? { refresh: 1 } : {}) }
             });
-            let url = res.data.url;
+            const rawUrl = typeof res.data?.url === 'string' ? res.data.url.trim() : '';
+            let url = /^https?:\/\//i.test(rawUrl) ? rawUrl : '';
             if (url) {
                 if (window.app?.getFastestUrl) {
                     url = await window.app.getFastestUrl(url);

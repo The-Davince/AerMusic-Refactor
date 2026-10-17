@@ -15,6 +15,8 @@ router = APIRouter()
 
 MUSIC_MAX_PER_IP = 600
 MUSIC_WINDOW_SECONDS = 10
+MUSIC_REFRESH_MAX_PER_IP = 30
+MUSIC_REFRESH_WINDOW_SECONDS = 10
 COVER_MAX_PER_IP = 2000
 COVER_WINDOW_SECONDS = 60
 MAX_COVER_BYTES = 1024 * 1024
@@ -28,7 +30,11 @@ _ROUTES = [
 def _route(name: str):
     async def handler(req: Request):
         log_id = get_log_id(req)
-        if not allow("music|" + _get_real_ip(req), MUSIC_MAX_PER_IP, MUSIC_WINDOW_SECONDS):
+        refresh = (req.query_params.get("refresh") or "").strip() == "1"
+        rate_prefix = "music-refresh|" if refresh else "music|"
+        rate_limit = MUSIC_REFRESH_MAX_PER_IP if refresh else MUSIC_MAX_PER_IP
+        rate_window = MUSIC_REFRESH_WINDOW_SECONDS if refresh else MUSIC_WINDOW_SECONDS
+        if not allow(rate_prefix + _get_real_ip(req), rate_limit, rate_window):
             return JSONResponse(status_code=429, content={"code": 429, "msg": "请求过于频繁", "data": None, "logId": log_id})
         try:
             data = await upstream.fetch(name, req.query_params)

@@ -10,6 +10,7 @@ from .log import log_ext
 import config as cfg
 
 _client: httpx.AsyncClient = None
+_cache_refresh_generation: dict[str, int] = {}
 
 ENDPOINTS = {
     "song/url": {"up": lambda: cfg.NETEASE_URL_API, "ttl": 600, "need": ("id",), "urlkey": True},
@@ -75,10 +76,16 @@ async def fetch(name: str, qp) -> dict:
     if ep is None:
         raise UpstreamError(f"未知接口 {name}", 404)
     params = _build_params(name, ep, qp)
+    bypass_cache = name == "song/url" and (qp.get("refresh") or "").strip() == "1"
     key = _cacheKey(name, params)
-    hit = cache.get(key)
-    if hit is not None:
-        return hit
+    request_generation = _cache_refresh_generation.get(key, 0)
+    if bypass_cache:
+        request_generation += 1
+        _cache_refresh_generation[key] = request_generation
+    if not bypass_cache:
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
     url = ep["up"]()
     last_err = None
     data = None
@@ -96,9 +103,21 @@ async def fetch(name: str, qp) -> dict:
             last_err = UpstreamError("上游API请求失败")
             log_ext("netease", "GET", url, status=0, resp_body=f"{type(e).__name__}: {e}", elapsed_ms=(time.time() - t0) * 1000)
     if data is None:
+        if bypass_cache and _cache_refresh_generation.get(key) == request_generation:
+            _cache_refresh_generation[key] = request_generation + 1
         raise last_err or UpstreamError("上游API请求失败")
     _post_process(name, data)
-    cache.put(key, data, ep["ttl"])
+    cacheable = name != "song/url"
+    if name == "song/url" and isinstance(data, dict):
+        song_url = data.get("url")
+        cacheable = isinstance(song_url, str) and bool(_re.match(r"^https?://", song_url.strip(), _re.I))
+    if bypass_cache:
+        if _cache_refresh_generation.get(key) == request_generation:
+            if cacheable:
+                cache.put(key, data, ep["ttl"])
+            _cache_refresh_generation[key] = request_generation + 1
+    elif cacheable and _cache_refresh_generation.get(key, 0) == request_generation:
+        cache.put(key, data, ep["ttl"])
     return data
 
 
