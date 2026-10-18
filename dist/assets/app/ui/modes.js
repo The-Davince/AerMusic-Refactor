@@ -10,6 +10,7 @@
         hideUITimers: { top: null, bottom: null, left: null, right: null }
     };
     let hideUIListener = null;
+    let hideUITouchListener = null;
     let olZoneBound = false;
 
     function setOlCardOpen(open) {
@@ -66,6 +67,11 @@
                 if (x > w - 100 && !isSideToolsHidden) showUIArea('right', '.side-tools');
             };
             window.addEventListener('mousemove', hideUIListener);
+            hideUITouchListener = (e) => {
+                const touch = e.touches && e.touches[0];
+                if (touch) hideUIListener(touch);
+            };
+            window.addEventListener('touchstart', hideUITouchListener, { passive: true });
         }
     }
 
