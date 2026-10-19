@@ -178,10 +178,11 @@ def _is_internal_base(url: str) -> bool:
 
 def _apply_upstream(text: str) -> str:
     """把 env 配置的上游地址写进 window.__AER_UPSTREAM__ 占位, 覆盖非geturl接口的前端直连地址"""
-    api_base = cfg.NETEASE_API_BASE
+    backend_api_base = cfg.NETEASE_API_BASE
+    api_base = cfg.NETEASE_API_PUBLIC_BASE or backend_api_base
     lyric_base = cfg.NETEASE_LYRIC_BASE
-    internal = _is_internal_base(api_base) or _is_internal_base(lyric_base)
-    if _is_internal_base(api_base):
+    internal = _is_internal_base(backend_api_base) or _is_internal_base(lyric_base)
+    if not cfg.NETEASE_API_PUBLIC_BASE and _is_internal_base(backend_api_base):
         api_base = "/api/up"
     if _is_internal_base(lyric_base):
         lyric_base = "/api/upl"

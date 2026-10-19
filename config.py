@@ -31,6 +31,7 @@ SESSION_COOKIE_SECURE = (_secure_cookie.lower() == "true") if _secure_cookie is 
 
 
 NETEASE_API_BASE = os.environ.get("NETEASE_API_BASE", "http://localhost:3000").rstrip("/")
+NETEASE_API_PUBLIC_BASE = os.environ.get("NETEASE_API_PUBLIC_BASE", "").strip().rstrip("/")
 NETEASE_LYRIC_BASE = os.environ.get("NETEASE_LYRIC_BASE", "http://localhost:5000/tr/lyric").rstrip("/")
 NETEASE_URL_API = os.environ.get("NETEASE_URL_API", "http://localhost:5000/geturl").rstrip("/")
 NETEASE_URL_KEY = os.environ.get("NETEASE_URL_KEY", "")
