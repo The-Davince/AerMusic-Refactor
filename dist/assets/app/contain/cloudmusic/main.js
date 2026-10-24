@@ -35,6 +35,7 @@ const CloudMusicPlatform = {
             artistTopSong: UP_API_BASE + '/artist/top/song',
             simiArtist: UP_API_BASE + '/simi/artist',
             topPlaylist: UP_API_BASE + '/top/playlist',
+            playlistDetail: UP_API_BASE + '/playlist/detail',
             playlistTrackAll: UP_API_BASE + '/playlist/track/all',
             personalizedNewSong: UP_API_BASE + '/personalized/newsong',
             personalized: UP_API_BASE + '/personalized',
@@ -1050,6 +1051,42 @@ const CloudMusicPlatform = {
     },
 
     
+
+    async getPlaylistDetail(playlistId) {
+        const id = String(playlistId || '').trim();
+        if (!/^\d{1,15}$/.test(id)) return null;
+        try {
+            const res = await axios.get(this.INFO.API.playlistDetail, { params: { id } });
+            const data = res.data || {};
+            return data.playlist || data.data?.playlist || null;
+        } catch (e) {
+            console.error('[CloudMusic] 获取歌单详情失败:', e);
+            return null;
+        }
+    },
+
+    async getPlaylistSongs(playlistId, limit = 1000) {
+        const id = String(playlistId || '').trim();
+        if (!/^\d{1,15}$/.test(id)) return [];
+        const max = Math.min(1000, Math.max(1, Number(limit) || 1000));
+        const songs = [];
+        let offset = 0;
+        for (let page = 0; page < 12 && songs.length < max; page++) {
+            const size = Math.min(500, max - songs.length);
+            let list = [];
+            try {
+                const res = await axios.get(this.INFO.API.playlistTrackAll, { params: { id, limit: size, offset } });
+                list = this._extractList(res.data, 'songs');
+            } catch (e) {
+                console.error('[CloudMusic] 获取歌单歌曲失败:', e);
+                break;
+            }
+            if (!list.length) break;
+            songs.push(...list);
+            offset += list.length;
+        }
+        return songs.slice(0, max);
+    },
 
     async getArtistDetail(artistId) {
         try {

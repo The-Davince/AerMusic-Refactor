@@ -46,6 +46,7 @@ ALLOWED_PATHS = (
     "artists",
     "album",
     "top/playlist",
+    "playlist/detail",
     "playlist/track/all",
     "personalized",
     "personalized/newsong",

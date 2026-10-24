@@ -368,10 +368,16 @@
                     <p class="playlists-intro">把喜欢的音乐, 放进属于自己的歌单</p>
                     <div id="playlists-summary" class="playlists-summary">0 个歌单 · 0 首歌曲</div>
                 </div>
-                <button class="apple-btn primary-btn playlists-create" onclick="app.createNewPlaylist()">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-                    新建歌单
-                </button>
+                <div class="playlists-header-actions">
+                    <button class="apple-btn primary-btn playlists-create" onclick="app.createNewPlaylist()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                        新建歌单
+                    </button>
+                    <button class="apple-btn secondary-btn playlists-import" onclick="app.showNeteaseImportDialog()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 14.9A5 5 0 0 1 6.5 5.5a6.5 6.5 0 0 1 12.6 2A4.5 4.5 0 0 1 18 16.5"/><path d="M12 12v7"/><path d="m9 16 3 3 3-3"/></svg>
+                        从网易云导入
+                    </button>
+                </div>
             </div>
             <div class="playlists-toolbar">
                 <h2>全部歌单</h2>
