@@ -15,13 +15,18 @@
     const PUSH_INTERVAL_MS = 60000;
     const EVENT_PUSH_DELAY_MS = 10000;
     let lastPushAt = 0;
+    let readyResolve = null;
+    let pullPromise = null;
+    let pullForce = false;
+    let forcePullPromise = null;
+    const readyPromise = new Promise((resolve) => { readyResolve = resolve; });
     const state = { user: null, pushTimer: null, favoriteTimer: null, favoriteChanges: [], favoriteSending: false, favoriteVersion: 0, favoriteController: null, favoriteFailCount: 0, lastPushed: {}, restoring: false, failCount: 0, restoreVersion: 0 };
     const eventState = { queue: [], timer: null, sending: false, version: 0, controller: null, last: Object.create(null), failCount: 0 };
 
     function readTS() {
         try { return JSON.parse(localStorage.getItem(SYNC_TS_KEY) || '{}'); } catch (e) { return {}; }
     }
-    function writeTS(ts) { localStorage.setItem(SYNC_TS_KEY, JSON.stringify(ts)); }
+    function writeTS(ts) { try { localStorage.setItem(SYNC_TS_KEY, JSON.stringify(ts)); } catch (e) {} }
     function resetSyncState() {
         clearTimeout(state.pushTimer);
         state.pushTimer = null;
@@ -55,6 +60,9 @@
         state.restoreVersion++;
         state.restoring = false;
         state.lastPushed = {};
+        pullPromise = null;
+        pullForce = false;
+        forcePullPromise = null;
         writeTS({});
         lastPushAt = 0;
         state.failCount = 0;
@@ -388,9 +396,11 @@
 
     window.AerMusicCloud = {
         getUser: () => (state && state.user) ? state.user : null,
+        waitReady: () => readyPromise,
         onAuthChanged: (fn) => { if (typeof fn === 'function' && authListeners.indexOf(fn) < 0) authListeners.push(fn); },
         api: api,
         fetchMe: fetchMe,
+        refresh: async () => { if (!state.user) return; await pullAndRestore('playlists'); },
         login: login,
         register: register,
         logout: logout,
@@ -501,39 +511,141 @@
             try { if (app._ensurePlaylistIds) app._ensurePlaylistIds(); } catch (e) {}
             try { if (app.page === 'playlists' && app.showPlaylistsList) app.showPlaylistsList(); } catch (e) {}
         }
+        try { if (app._compactStoredSongs) app._compactStoredSongs(); } catch (e) {}
     }
 
-    async function pullAndRestore() {
+    function pullAndRestore(forceKind) {
+        if (!state.user) return Promise.resolve();
+        if (pullPromise) {
+            if (!forceKind || pullForce === forceKind) return pullPromise;
+            if (forcePullPromise) return forcePullPromise;
+            forcePullPromise = pullPromise.catch(() => {}).then(() => {
+                forcePullPromise = null;
+                return pullAndRestore(forceKind);
+            });
+            return forcePullPromise;
+        }
+        const task = pullOnce(forceKind);
+        pullPromise = task;
+        pullForce = forceKind || false;
+        const clear = () => { if (pullPromise === task) { pullPromise = null; pullForce = false; } };
+        task.then(clear, clear);
+        return task;
+    }
+
+    function parsePlaylistArray(raw) {
+        try {
+            const value = JSON.parse(raw || '[]');
+            return Array.isArray(value) ? value : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function playlistKeys(pl) {
+        const keys = [];
+        if (pl && pl.uuid) keys.push('u:' + pl.uuid);
+        if (pl && pl.id !== undefined && pl.id !== null && pl.id !== '') keys.push('i:' + pl.id);
+        return keys;
+    }
+
+    function playlistFingerprint(pl) {
+        if (!pl || typeof pl !== 'object') return '';
+        const songs = Array.isArray(pl.songs) ? pl.songs : [];
+        const ids = songs.map(song => song && song.id).filter(id => id !== undefined && id !== null && id !== '').map(String).sort();
+        return [pl.name || '', pl.createTime || '', ids.join(',')].join('|');
+    }
+
+    function readPlaylistDeletions() {
+        let value = {};
+        try {
+            const parsed = JSON.parse(localStorage.getItem('AerMusic_Playlist_Deletions') || '{}');
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) value = parsed;
+        } catch (e) {
+            value = {};
+        }
+        try {
+            const runtime = window.app && typeof window.app._allPlaylistDeletions === 'function' ? window.app._allPlaylistDeletions() : null;
+            if (runtime && typeof runtime === 'object') Object.keys(runtime).forEach(key => { value[key] = runtime[key]; });
+        } catch (e) {}
+        const now = Date.now();
+        Object.keys(value).forEach(key => {
+            if (now - Number(value[key] || 0) > 30 * 24 * 60 * 60 * 1000) delete value[key];
+        });
+        return value;
+    }
+
+    function mergePlaylists(local, remote) {
+        if (!Array.isArray(remote)) return remote;
+        const result = Array.isArray(local) ? local.slice() : [];
+        const deletions = readPlaylistDeletions();
+        const seen = new Set();
+        const fingerprints = new Set();
+        result.forEach(pl => {
+            playlistKeys(pl).forEach(key => seen.add(key));
+            fingerprints.add(playlistFingerprint(pl));
+        });
+        remote.forEach(pl => {
+            const keys = playlistKeys(pl);
+            if (keys.some(key => deletions[key])) return;
+            if (keys.some(key => seen.has(key))) return;
+            const incomplete = !pl || !pl.uuid || pl.id === undefined || pl.id === null || pl.id === '';
+            if (incomplete && fingerprints.has(playlistFingerprint(pl))) return;
+            keys.forEach(key => seen.add(key));
+            fingerprints.add(playlistFingerprint(pl));
+            result.push(pl);
+        });
+        return result;
+    }
+
+    function filterDeletedPlaylists(list) {
+        if (!Array.isArray(list)) return list;
+        const deletions = readPlaylistDeletions();
+        return list.filter(pl => !playlistKeys(pl).some(key => deletions[key]));
+    }
+
+
+    async function pullOnce(forceKind) {
         if (!state.user) return;
         const userId = state.user.userId;
         const restoreVersion = state.restoreVersion;
         state.restoring = true;
         try {
             const resp = await api('GET', '/api/library');
-            if (!state.user || state.user.userId !== userId) return;
+            if (!state.user || state.user.userId !== userId || state.restoreVersion !== restoreVersion) return;
             const data = resp.data || {};
             const ts = readTS();
             let changed = false;
             const changedKinds = [];
             Object.keys(KIND_KEYS).forEach((kind) => {
+                if (forceKind && forceKind !== true && kind !== forceKind) return;
+                const force = forceKind === true || forceKind === kind;
                 const remote = data[kind];
                 if (!remote) return;
                 if (remote.updatedAt === 0 || remote.data === null || remote.data === undefined) {
-                    if (remote.updatedAt !== 0 && (ts[kind] || 0) >= remote.updatedAt) return;
-                    
+                    if (remote.updatedAt === 0) {
+                        if (force) return;
+                    } else if (!force && (ts[kind] || 0) >= remote.updatedAt) {
+                        return;
+                    }
                     localStorage.removeItem(KIND_KEYS[kind]);
                     state.lastPushed[kind] = '';
                 } else {
-                    if ((ts[kind] || 0) >= (remote.updatedAt || 0)) return;
-                    const raw = JSON.stringify(remote.data);
-                    if (localStorage.getItem(KIND_KEYS[kind]) === raw) {
-                        
+                    if (!force && (ts[kind] || 0) >= (remote.updatedAt || 0)) return;
+                    const localRaw = localStorage.getItem(KIND_KEYS[kind]);
+                    const dirtyForce = force && kind === 'playlists' && localRaw !== null && localRaw !== (state.lastPushed[kind] ?? null);
+                    const remoteData = kind === 'playlists' ? filterDeletedPlaylists(remote.data) : remote.data;
+                    const deletedFiltered = kind === 'playlists' && Array.isArray(remote.data) && Array.isArray(remoteData) && remoteData.length !== remote.data.length;
+                    const needsPush = dirtyForce || deletedFiltered;
+                    const nextData = dirtyForce ? mergePlaylists(filterDeletedPlaylists(parsePlaylistArray(localRaw)), remote.data) : remoteData;
+                    const raw = JSON.stringify(nextData);
+                    if (localRaw === raw) {
                         ts[kind] = remote.updatedAt;
-                        state.lastPushed[kind] = raw;
+                        state.lastPushed[kind] = needsPush ? '' : raw;
                         return;
                     }
                     localStorage.setItem(KIND_KEYS[kind], raw);
-                    state.lastPushed[kind] = raw;
+                    state.lastPushed[kind] = needsPush ? '' : raw;
                 }
                 ts[kind] = remote.updatedAt;
                 changed = true;
@@ -586,6 +698,10 @@
                     state.lastPushed[kind] = snap;
                     ts[kind] = resp.data.updatedAt;
                     state.failCount = 0;
+                    if (kind === 'playlists') {
+                        try { localStorage.removeItem('AerMusic_Playlist_Deletions'); } catch (e) {}
+                        try { if (window.app && typeof window.app._clearSessionPlaylistDeletions === 'function') window.app._clearSessionPlaylistDeletions(); } catch (e) {}
+                    }
                 } else {
                     
                     anyFail = true;
@@ -624,6 +740,12 @@
                 flushEdges();
             }
         });
+        window.addEventListener('storage', (e) => {
+            if (!e) return;
+            if (e.key === 'AerMusic_Playlist_Deletions' || e.key === 'AerMusic_Playlists') {
+                try { if (window.app && typeof window.app.applyPlaylistDeletions === 'function') window.app.applyPlaylistDeletions(); } catch (err) {}
+            }
+        });
     }
 
     
@@ -638,31 +760,38 @@
             const rest = list.filter(x => String(x.id) !== String(song.id));
             list = [entry].concat(rest).slice(0, 200);
         }
-        localStorage.setItem(KIND_KEYS.history, JSON.stringify(list));
+        try { localStorage.setItem(KIND_KEYS.history, JSON.stringify(list)); } catch (e) {}
     }
 
     
     async function boot() {
         try {
-            await fetchMe();
-            await pullAndRestore();
-        } catch (e) {}
-        watchLocal();
-        
-        const hookApp = () => {
-            if (window.app && !window.app.__cloudSyncHooked) {
-                window.app.__cloudSyncHooked = true;
-                const originalPlay = window.app.play.bind(window.app);
-                window.app.play = (index) => {
-                    const song = window.app.playlist && window.app.playlist[index];
-                    recordHistory(song);
-                    recordEvent('play_start', song, { position: 0, duration: song && song.duration });
-                    return originalPlay(index);
-                };
+            try {
+                await fetchMe();
+                await pullAndRestore();
+            } catch (e) {}
+            watchLocal();
+            
+            const hookApp = () => {
+                if (window.app && !window.app.__cloudSyncHooked) {
+                    window.app.__cloudSyncHooked = true;
+                    const originalPlay = window.app.play.bind(window.app);
+                    window.app.play = (index) => {
+                        const song = window.app.playlist && window.app.playlist[index];
+                        recordHistory(song);
+                        recordEvent('play_start', song, { position: 0, duration: song && song.duration });
+                        return originalPlay(index);
+                    };
+                }
+            };
+            hookApp();
+            setInterval(hookApp, 1000);
+        } finally {
+            if (readyResolve) {
+                readyResolve();
+                readyResolve = null;
             }
-        };
-        hookApp();
-        setInterval(hookApp, 1000);
+        }
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
