@@ -832,6 +832,13 @@ const CloudMusicPlatform = {
             const yrcauthor = data.yrc?.author || "";
             const lyricist = data.lyricist ?? "";
             const composition = data.composition ?? "";
+            const textOf = (value) => Array.isArray(value) ? value.filter(Boolean).join(" / ") : String(value || "").trim();
+            const metaItems = [
+                { type: "作词", text: textOf(lyricist) },
+                { type: "作曲", text: textOf(composition) },
+                { type: "滚动歌词贡献者", text: textOf(yrcauthor || lrcauthor) },
+                { type: "翻译歌词贡献者", text: textOf(transauthor) }
+            ].filter(item => item.text);
             let mainLrc = data.lrc?.lyric || '';
             let yrcStr = data.yrc?.lyric || '';
 
@@ -886,11 +893,12 @@ const CloudMusicPlatform = {
                 yrc: yrcStr,
                 ttml: data.ttml || "",
                 tList, hasTranslation: tList.length > 0,
-                lyricauthor: lrcauthor, transauthor
+                lyricauthor: lrcauthor, transauthor,
+                meta: metaItems
             };
         } catch (e) {
             console.error('[CloudMusic] 获取歌词失败:', e);
-            return { lrc: '', tlyric: '', yrc: '', ttml: '', tList: [], hasTranslation: false, lyricauthor: "", transauthor: "" };
+            return { lrc: '', tlyric: '', yrc: '', ttml: '', tList: [], hasTranslation: false, lyricauthor: "", transauthor: "", meta: [] };
         }
     },
 
