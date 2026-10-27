@@ -88,6 +88,10 @@
                 opacity: 1 !important;
                 pointer-events: auto !important;
             }
+            body.ui-hide-enabled.search-active #top-bar {
+                opacity: 1;
+                pointer-events: auto;
+            }
             body.only-lyrics-enabled .song-info-side {
                 opacity: 0 !important;
                 pointer-events: none !important;
