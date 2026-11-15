@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import threading
+from contextlib import contextmanager
 
 import config as cfg
 from .log import a
@@ -339,6 +340,84 @@ def run_many(sql: str, seq: list) -> None:
     conn = _conn()
     try:
         conn.executemany(sql, seq)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+class _Tx:
+    def __init__(self, conn, pg):
+        self.conn = conn
+        self.pg = pg
+
+    def query(self, sql: str, args: tuple = ()) -> list:
+        if self.pg:
+            cur = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            try:
+                cur.execute(_pg_sql(sql), args)
+                return [dict(row) for row in cur.fetchall()]
+            finally:
+                cur.close()
+        cur = self.conn.execute(sql, args)
+        rows = cur.fetchall()
+        cur.close()
+        return [dict(row) for row in rows]
+
+    def get(self, sql: str, args: tuple = ()):
+        rows = self.query(sql, args)
+        return rows[0] if rows else None
+
+    def run(self, sql: str, args: tuple = ()) -> int:
+        if self.pg:
+            cur = self.conn.cursor()
+            try:
+                cur.execute(_pg_sql(sql), args)
+                return cur.rowcount
+            finally:
+                cur.close()
+        cur = self.conn.execute(sql, args)
+        count = cur.rowcount
+        cur.close()
+        return count
+
+    def run_many(self, sql: str, seq: list) -> None:
+        if self.pg:
+            cur = self.conn.cursor()
+            try:
+                cur.executemany(_pg_sql(sql), seq)
+            finally:
+                cur.close()
+            return
+        self.conn.executemany(sql, seq)
+
+
+@contextmanager
+def transaction():
+    if _backend == "pg":
+        conn = _pg_get()
+        try:
+            conn.autocommit = False
+            cur = conn.cursor()
+            try:
+                cur.execute("BEGIN")
+            finally:
+                cur.close()
+            tx = _Tx(conn, True)
+            try:
+                yield tx
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        finally:
+            _pg_put(conn)
+        return
+    conn = _conn()
+    conn.execute("BEGIN IMMEDIATE")
+    tx = _Tx(conn, False)
+    try:
+        yield tx
         conn.commit()
     except Exception:
         conn.rollback()

@@ -183,13 +183,36 @@
         openUserPopup();
     }
 
+    function guestSummary() {
+        const c = cloud();
+        return c && c.guestSummary ? c.guestSummary() : { favorites: 0, playlists: 0, history: 0 };
+    }
+
+    function guestHasData() {
+        const c = cloud();
+        if (c && c.guestHasServerData && c.guestHasServerData()) return true;
+        const s = guestSummary();
+        return !!(s.favorites || s.playlists || s.history);
+    }
+
+    function guestSummaryText() {
+        const s = guestSummary();
+        const parts = [];
+        if (s.favorites) parts.push(s.favorites + ' 首收藏');
+        if (s.playlists) parts.push(s.playlists + ' 个歌单');
+        if (s.history) parts.push(s.history + ' 条历史');
+        return parts.length ? '本机已云端保存 ' + parts.join(' / ') : '收藏 / 歌单 / 播放历史自动云端保存';
+    }
+
     function guestHtml() {
         return `
             <div class="up-guest">
                 <span class="user-avatar">${ICON_USER}</span>
-                <div class="up-guest-title">未登录</div>
-                <div class="up-guest-desc">登录后收藏 / 歌单 / 播放历史自动云端保存</div>
+                <div class="up-guest-title">游客模式</div>
+                <div class="up-guest-desc">${esc(guestSummaryText())}</div>
                 <button type="button" class="up-btn primary" data-up="login">登录 / 注册</button>
+                <a class="up-guest-link" href="/privacy" target="_blank" rel="noopener">游客数据说明</a>
+                <button type="button" class="up-btn" data-up="clear-guest">清除本机游客数据</button>
             </div>`;
     }
 
@@ -259,6 +282,8 @@
                 closeUserPopup();
                 openAuthModal('login');
             };
+            const clearBtn = popup.querySelector('[data-up="clear-guest"]');
+            if (clearBtn) clearBtn.onclick = () => confirmClearGuest(clearBtn);
             return;
         }
         const avatarBtn = popup.querySelector('[data-up="avatar"]');
@@ -317,6 +342,30 @@
         refreshUserArea();
     }
 
+    function confirmClearGuest(btn) {
+        const c = cloud();
+        const a = app();
+        if (!c || !c.clearGuestData) return;
+        const run = async () => {
+            setBusy(btn, true, '清除中...');
+            try {
+                await c.clearGuestData();
+                toast('已清除游客数据');
+                closeUserPopup();
+                refreshUserArea();
+            } catch (e) {
+                toast(e.message || '清除失败');
+            } finally {
+                setBusy(btn, false);
+            }
+        };
+        if (a && a.showConfirmDialog) {
+            a.showConfirmDialog('清除游客数据', '将删除本机游客的收藏、歌单、历史和推荐数据，且无法恢复。', run);
+        } else {
+            run();
+        }
+    }
+
     
     function codeBoxesHtml() {
         let html = '';
@@ -326,6 +375,11 @@
         return html;
     }
 
+    function claimHtml() {
+        if (!guestHasData()) return '';
+        return `<label class="auth-claim"><input type="checkbox" data-auth-claim checked><span>合并本机游客数据<small>${esc(guestSummaryText())}</small></span></label>`;
+    }
+
     function authHtml(mode) {
         const isLogin = mode !== 'register';
         return `
@@ -333,6 +387,7 @@
                 <button type="button" class="auth-tab${isLogin ? ' active' : ''}" data-auth-tab="login">登录</button>
                 <button type="button" class="auth-tab${isLogin ? '' : ' active'}" data-auth-tab="register">注册</button>
             </div>
+            ${claimHtml()}
             <div class="auth-pane" data-auth-pane="login"${isLogin ? '' : ' style="display:none;"'}>
                 <input id="auth-login-user" class="up-input" placeholder="用户名或邮箱" autocomplete="username" maxlength="64" spellcheck="false">
                 <div class="auth-pass-row">
@@ -524,10 +579,12 @@
         if (!password) { toast('请输入密码'); return; }
         const c = cloud();
         if (!c || !c.login) return;
+        const claimEl = modal.querySelector('[data-auth-claim]');
+        const claimGuest = !!(claimEl && claimEl.checked);
         setBusy(btn, true);
         try {
-            await c.login(username, password);
-            toast('登录成功');
+            await c.login(username, password, { claimGuest });
+            toast(claimGuest ? '登录成功, 游客数据已处理' : '登录成功');
             closeAuthModal();
         } catch (e) {
             toast(e.message || '登录失败');
@@ -554,10 +611,12 @@
         if (!/^\d{6}$/.test(code)) { toast('请输入 ' + CODE_LEN + ' 位数字验证码'); return; }
         const c = cloud();
         if (!c || !c.register) return;
+        const claimEl = modal.querySelector('[data-auth-claim]');
+        const claimGuest = !!(claimEl && claimEl.checked);
         setBusy(btn, true);
         try {
-            await c.register({ username: username, password: password, nickname: nickname, email: email, code: code });
-            toast('注册成功, 已自动登录');
+            await c.register({ username: username, password: password, nickname: nickname, email: email, code: code }, { claimGuest });
+            toast(claimGuest ? '注册成功, 游客数据已处理' : '注册成功, 已自动登录');
             closeAuthModal();
         } catch (e) {
             toast(e.message || '注册失败');

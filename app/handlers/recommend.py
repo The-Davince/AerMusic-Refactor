@@ -12,7 +12,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 import config as cfg
-from app.handlers.auth import currentUser, readJsonBody
+from app.handlers.auth import readJsonBody
+from app.handlers.guest import currentPrincipal
 from utils import db, upstream
 from utils.log import get_log_id, _get_real_ip
 from utils.rate_limit import allow, allow_redis, reserve_redis
@@ -654,7 +655,7 @@ def _build_profile(userid):
 
 @router.get("/recommend/profile")
 async def getProfile(req: Request):
-    user = currentUser(req)
+    user = currentPrincipal(req)
     if not user:
         return _resp(req, 401, "未登录", 401)
     if not allow(f"recprofile|user:{user['id']}", RECOMMEND_PROFILE_MAX_PER_MIN, 60):
@@ -665,7 +666,7 @@ async def getProfile(req: Request):
 
 @router.post("/recommend/events")
 async def postEvents(req: Request):
-    user = currentUser(req)
+    user = currentPrincipal(req)
     if not user:
         return _resp(req, 401, "未登录", 401)
     body, err = await readJsonBody(req, EVENT_MAX_BODY)
@@ -690,7 +691,7 @@ async def postEvents(req: Request):
 
 @router.post("/recommend/edges")
 async def postEdges(req: Request):
-    user = currentUser(req)
+    user = currentPrincipal(req)
     if not user:
         return _resp(req, 401, "未登录", 401)
     body, err = await readJsonBody(req, EDGE_MAX_BODY)
@@ -736,6 +737,8 @@ RECOMMEND_SOURCE_WEIGHTS = {
 RECOMMEND_PUBLIC_PLAYLIST_LIMIT = 8
 RECOMMEND_PUBLIC_PLAYLIST_PICK = 2
 RECOMMEND_PUBLIC_TRACK_LIMIT = 24
+RECOMMEND_MAX_BODY = 128 * 1024
+RECOMMEND_PROFILE_MAX = 128 * 1024
 RECOMMEND_RIP_OFF_RE = re.compile(r"翻唱|翻录|盗版|dj版|抖音版")
 RECOMMEND_INSTRUMENTAL_RE = re.compile(r"伴奏|纯音乐|纯享|卡拉\s*ok|karaoke|instrumental")
 RECOMMEND_VARIANT_BRACKET_RE = re.compile(
@@ -1424,24 +1427,30 @@ async def _seed_artist_ids(seed_ids):
     return list(dict.fromkeys(artists))
 
 
-def _parse_recommend_ids(req):
-    raw = req.query_params.get("ids")
-    if raw is None or raw.strip() == "":
-        raw = req.query_params.get("seed") or ""
+def _parse_recommend_ids(params):
+    raw = params.get("ids")
+    if raw is None or (isinstance(raw, str) and raw.strip() == ""):
+        raw = params.get("seed") or ""
+    if isinstance(raw, bool) or not isinstance(raw, (str, int)):
+        return None
+    raw = str(raw)
     values = [part.strip() for part in raw.split(",") if part.strip()]
     if len(values) > RECOMMEND_MAX_SEEDS or any(not _numeric_id(value) for value in values):
         return None
     return list(dict.fromkeys(_numeric_id(value) for value in values))
 
 
-def _client_profile(req):
-    raw = req.query_params.get("profile") or ""
-    if len(raw) > 16000:
-        return {}
-    try:
-        profile = json.loads(raw)
-    except (TypeError, ValueError, RecursionError):
-        return {}
+def _client_profile(params):
+    raw = params.get("profile")
+    if isinstance(raw, dict):
+        profile = raw
+    else:
+        if not isinstance(raw, str) or len(raw) > RECOMMEND_PROFILE_MAX:
+            return {}
+        try:
+            profile = json.loads(raw)
+        except (TypeError, ValueError, RecursionError):
+            return {}
     if not isinstance(profile, dict):
         return {}
     def values(section, key, limit=120):
@@ -1494,15 +1503,30 @@ def _client_profile(req):
     }
 
 
-def _recommend_session(req, user):
-    raw = req.query_params.get("session_id") or ""
-    if not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", raw):
+def _recommend_session(req, params, user):
+    raw = params.get("session_id")
+    if not isinstance(raw, str) or not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", raw):
         raw = "default"
-    owner = f"user:{user['id']}" if user else f"anon:{_get_real_ip(req)}"
+    if user:
+        owner = f"guest:{user['id']}" if user.get("isguest") else f"user:{user['id']}"
+    else:
+        owner = f"anon:{_get_real_ip(req)}"
     return owner, raw
 
 
+async def _recommend_params(req):
+    params = dict(req.query_params)
+    if req.method != "POST":
+        return params, None
+    body, err = await readJsonBody(req, RECOMMEND_MAX_BODY)
+    if err:
+        return None, err
+    params.update(body)
+    return params, None
+
+
 @router.get("/recommend/get")
+@router.post("/recommend/get")
 async def getRecommend(req: Request):
     token = _recommend_upstream_state.set({
         "left": RECOMMEND_UPSTREAM_BUDGET,
@@ -1519,16 +1543,26 @@ async def _get_recommend(req: Request):
     rate_key = "recget|" + _get_real_ip(req)
     if not allow(rate_key, RECOMMEND_MAX_PER_MIN, 60):
         return _resp(req, 429, "请求过于频繁", 429)
+    params, err = await _recommend_params(req)
+    if err:
+        return err
     try:
-        limit = int(req.query_params.get("limit") or RECOMMEND_LIMIT_DEFAULT)
-    except ValueError:
+        limit = int(params.get("limit") or RECOMMEND_LIMIT_DEFAULT)
+    except (TypeError, ValueError, OverflowError):
         limit = RECOMMEND_LIMIT_DEFAULT
     limit = max(1, min(RECOMMEND_LIMIT_MAX, limit))
-    user = currentUser(req)
-    explicit_ids = _parse_recommend_ids(req)
+    user = currentPrincipal(req)
+    explicit_ids = _parse_recommend_ids(params)
     if explicit_ids is None:
         return _resp(req, 400, "种子歌曲不合法", 400)
-    profile = await asyncio.to_thread(_build_profile, user["id"]) if user else _client_profile(req)
+    if user:
+        profile = await asyncio.to_thread(_build_profile, user["id"])
+        if user.get("isguest"):
+            client_profile = _client_profile(params)
+            if client_profile:
+                profile = client_profile
+    else:
+        profile = _client_profile(params)
     seed_ids = explicit_ids or _pick_seeds(profile)
     seed_ids = list(dict.fromkeys(value for value in seed_ids if value))[:RECOMMEND_MAX_SEEDS]
     if explicit_ids:
@@ -1542,11 +1576,11 @@ async def _get_recommend(req: Request):
     for seed_id in seed_ids:
         signals["played"].update(_song_keys({"id": seed_id}))
     artist_ids = await _seed_artist_ids(seed_ids)
-    owner, session_id = _recommend_session(req, user)
+    owner, session_id = _recommend_session(req, params, user)
     excluded = _recommend_state_for(owner, session_id)
     try:
-        familiarity = float(req.query_params.get("familiarity") or 0.5)
-    except (TypeError, ValueError):
+        familiarity = float(params.get("familiarity") or 0.5)
+    except (TypeError, ValueError, OverflowError):
         familiarity = 0.5
     familiarity = max(0.0, min(1.0, familiarity))
     include_explore = not seed_ids

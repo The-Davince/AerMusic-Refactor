@@ -351,7 +351,7 @@ async def oidc_login(req: Request):
         return _html_page(_oidc_page.render_consent(ticket, data["csrf"], client_name, scopes, "", "登录校验失败, 请刷新页面后重试"), 403)
     username = str(body.get("username") or "").strip()
     password = body.get("password")
-    row = db.get("SELECT id, pass, salt FROM users WHERE lower(username) = lower(?)", (username,)) if username else None
+    row = db.get("SELECT id, pass, salt FROM users WHERE lower(username) = lower(?) AND isguest = 0", (username,)) if username else None
     if not row:
         await asyncio.to_thread(checkPass, password if isinstance(password, str) else "", "0" * 64, "00" * 16)
     if not row or not isinstance(password, str) or not await asyncio.to_thread(checkPass, password, row["pass"], row["salt"]):
@@ -427,7 +427,7 @@ async def oidc_token(req: Request):
             return _json_err("invalid_grant", "authorization code invalid")
         if not hmac.compare_digest(str(row["code_challenge"]), _pkce_value(verifier)):
             return _json_err("invalid_grant", "PKCE verification failed")
-        user = await asyncio.to_thread(db.get, "SELECT id, username FROM users WHERE id = ?", (row["userid"],))
+        user = await asyncio.to_thread(db.get, "SELECT id, username FROM users WHERE id = ? AND isguest = 0", (row["userid"],))
         if not user:
             return _json_err("invalid_grant", "account unavailable")
         sid = secrets.token_urlsafe(24)
@@ -466,7 +466,7 @@ async def oidc_token(req: Request):
         session = await oidc_store.session_active(row["sid"], client_id, row["userid"])
         if not session:
             return _json_err("invalid_grant", "grant revoked")
-        user = await asyncio.to_thread(db.get, "SELECT id FROM users WHERE id = ?", (row["userid"],))
+        user = await asyncio.to_thread(db.get, "SELECT id FROM users WHERE id = ? AND isguest = 0", (row["userid"],))
         if not user:
             return _json_err("invalid_grant", "account unavailable")
         await oidc_store.touch_session(row["sid"])
@@ -507,7 +507,7 @@ async def oidc_userinfo(req: Request):
     if not await oidc_store.session_active(payload.get("sid"), client_id, userid):
         return _json_err("invalid_token", "session revoked", 401)
     user = await asyncio.to_thread(
-        db.get, "SELECT id, username, nickname, avatar, bio FROM users WHERE id = ?", (userid,))
+        db.get, "SELECT id, username, nickname, avatar, bio FROM users WHERE id = ? AND isguest = 0", (userid,))
     if not user:
         return _json_err("invalid_token", "account unavailable", 401)
     result = {"sub": str(user["id"])}

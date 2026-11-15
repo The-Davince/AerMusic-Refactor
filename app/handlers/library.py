@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from app.handlers.auth import currentUser, readJsonBody
+from app.handlers.guest import currentPrincipal
 from utils import db
 from utils.log import a, get_log_id, _get_real_ip
 from utils.rate_limit import allow
@@ -165,7 +166,7 @@ def _apply_favorite_changes(userid, changes, updated_at):
 
 @router.get("/library")
 async def getAll(req: Request):
-    user = currentUser(req)
+    user = currentPrincipal(req)
     if not user:
         return _resp(req, 401, "未登录", 401)
     rows = await asyncio.to_thread(
@@ -184,7 +185,7 @@ async def getAll(req: Request):
 
 @router.put("/library/{kind}")
 async def putKind(req: Request, kind: str):
-    user = currentUser(req)
+    user = currentPrincipal(req)
     if not user:
         return _resp(req, 401, "未登录", 401)
     if kind not in KINDS:

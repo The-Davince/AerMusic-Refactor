@@ -107,7 +107,9 @@ const CloudMusicPlatform = {
         if (hb.recommendProfilePromise) return hb.recommendProfilePromise;
         if (Date.now() - hb.recommendProfileAt < 300000) return Promise.resolve(hb.recommendProfile);
         const version = hb.recommendProfileVersion;
-        hb.recommendProfilePromise = this._api('/api/recommend/profile').then(data => {
+        const cloud = window.AerMusicCloud;
+        const ensure = cloud && cloud.ensureGuest ? cloud.ensureGuest() : Promise.resolve();
+        hb.recommendProfilePromise = ensure.then(() => this._api('/api/recommend/profile')).then(data => {
             if (version !== hb.recommendProfileVersion) return;
             const profile = data?.data && !Array.isArray(data.data) ? data.data : data;
             hb.recommendProfile = profile && typeof profile === 'object' ? profile : {};
@@ -129,6 +131,11 @@ const CloudMusicPlatform = {
         hb.recommendProfileAt = 0;
         hb.recommendProfilePromise = null;
         hb.usedSeeds = null;
+        hb.recommendSessionId = null;
+        hb.hotPlaylistIds = [];
+        hb.hotPlaylistCursor = 0;
+        hb.similarArtistIdx = 0;
+        hb.seedArtistId = null;
     },
 
     _recommendSessionId() {
@@ -296,7 +303,7 @@ const CloudMusicPlatform = {
             favoriteAlbums: favoriteAlbums.slice(0, 40),
             playlistSongs: playlistSongs.map(compactSong).filter(Boolean).slice(0, 40),
             historySongs: historySongs.map(compactSong).filter(Boolean).slice(0, 30),
-            behavior: { dislikedIds, dislikedKeys, dislikedTags: [...dislikedTags.values()], songs: sortBehavior(behaviorSongs), artists: sortBehavior(behaviorArtists), albums: sortBehavior(behaviorAlbums) },
+            behavior: { dislikedIds, dislikedKeys, dislikedTags: [...dislikedTags.values()].slice(-100), songs: sortBehavior(behaviorSongs), artists: sortBehavior(behaviorArtists), albums: sortBehavior(behaviorAlbums) },
         };
     },
 
@@ -753,6 +760,10 @@ const CloudMusicPlatform = {
 
     async getRecommendByProfile(seedId, limit = 5) {
         try {
+            const cloud = window.AerMusicCloud;
+            if (cloud && cloud.ensureGuest) {
+                try { await cloud.ensureGuest(); } catch (e) {}
+            }
             const params = { limit };
             if (seedId) params.seed = seedId;
             const app = window.app || {};
@@ -768,8 +779,9 @@ const CloudMusicPlatform = {
             if (ids.length > 1) params.ids = ids.slice(0, 8).join(',');
             params.session_id = this._recommendSessionId();
             params.familiarity = 0.5;
-            params.profile = JSON.stringify(this._localRecommendProfile());
-            const res = await axios.get('/api/recommend/get', { params });
+            const principal = cloud && cloud.getPrincipal ? cloud.getPrincipal() : null;
+            if (!principal || !principal.id) params.profile = this._localRecommendProfile();
+            const res = await axios.post('/api/recommend/get', params);
             const songs = res.data && res.data.data ? res.data.data.songs : null;
             if (!Array.isArray(songs)) return [];
             const disliked = this._recommendSignals().dislikedIds;

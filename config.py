@@ -28,6 +28,14 @@ PGSQL_CONNECT_TIMEOUT = max(1, int(os.environ.get("PGSQL_CONNECT_TIMEOUT", "5"))
 SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL_SECONDS", "2592000"))
 _secure_cookie = os.environ.get("SESSION_COOKIE_SECURE")
 SESSION_COOKIE_SECURE = (_secure_cookie.lower() == "true") if _secure_cookie is not None else APP_ENV in ("prod", "production")
+GUEST_ENABLED = os.environ.get("GUEST_ENABLED", "true").strip().lower() == "true"
+GUEST_COOKIE = "aermusic_guest"
+GUEST_TOKEN_HEADER = "X-Guest-Token"
+GUEST_TTL_SECONDS = max(86400, int(os.environ.get("GUEST_TTL_SECONDS", "15552000")))
+GUEST_LAST_SEEN_SECONDS = max(60, int(os.environ.get("GUEST_LAST_SEEN_SECONDS", "3600")))
+GUEST_CREATE_MAX_PER_IP = max(1, int(os.environ.get("GUEST_CREATE_MAX_PER_IP", "30")))
+GUEST_CREATE_WINDOW_SECONDS = max(60, int(os.environ.get("GUEST_CREATE_WINDOW_SECONDS", "3600")))
+GUEST_CLEANUP_BATCH = max(1, int(os.environ.get("GUEST_CLEANUP_BATCH", "100")))
 
 
 NETEASE_API_BASE = os.environ.get("NETEASE_API_BASE", "http://localhost:3000").rstrip("/")
@@ -45,7 +53,7 @@ UPSTREAM_MAX_RESPONSE_BYTES = max(64 * 1024, int(os.environ.get("UPSTREAM_MAX_RE
 # 上游与本站同机/内网时前端改走 /api/up 代理, 这个是代理端点进程内缓存的秒数(0=不缓存)
 UP_PROXY_TTL = max(0, int(os.environ.get("UP_PROXY_TTL", "120")))
 
-# true 时前端取推荐直接走 /api/recommend/get(后端结合画像实时算), 不再走前端推荐逻辑
+# true 时前端取推荐直接走 POST /api/recommend/get(后端结合画像实时算), 不再走前端推荐逻辑
 INTERNAL_RECOMMEND = os.environ.get("INTERNAL_RECOMMEND", "true").strip().lower() == "true"
 
 TO_THREAD_WORKERS = int(os.environ.get("TO_THREAD_WORKERS", "64"))

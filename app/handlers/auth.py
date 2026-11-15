@@ -74,8 +74,8 @@ def currentUser(req: Request):
     if not token:
         return None
     row = db.get(
-        "SELECT u.id, u.username, u.nickname, u.uuid, u.avatar, u.bio, s.expiresat, s.createdat "
-        "FROM sessions s JOIN users u ON u.id = s.userid WHERE s.tokenkey = ?",
+        "SELECT u.id, u.username, u.nickname, u.uuid, u.avatar, u.bio, u.isguest, s.expiresat, s.createdat "
+        "FROM sessions s JOIN users u ON u.id = s.userid WHERE s.tokenkey = ? AND u.isguest = 0",
         (security.tokenKey(token),),
     )
     if not row or row["expiresat"] <= int(time.time()):
@@ -227,7 +227,7 @@ async def login(req: Request):
         return err
     username = _extractUsername(body)
     password = body.get("password")
-    row = db.get("SELECT id, pass, salt FROM users WHERE lower(username) = lower(?)", (username,)) if username else None
+    row = db.get("SELECT id, pass, salt FROM users WHERE lower(username) = lower(?) AND isguest = 0", (username,)) if username else None
     if not row:
         await asyncio.to_thread(security.checkPass, password if isinstance(password, str) else "", "0" * 64, "00" * 16)
     if not row or not isinstance(password, str) or not await asyncio.to_thread(security.checkPass, password, row["pass"], row["salt"]):

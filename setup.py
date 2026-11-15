@@ -16,13 +16,24 @@ TABLES = [
         avatar TEXT NOT NULL DEFAULT '',
         bio TEXT NOT NULL DEFAULT '',
         email TEXT NOT NULL DEFAULT '',
-        emailverified INTEGER NOT NULL DEFAULT 0
+        emailverified INTEGER NOT NULL DEFAULT 0,
+        isguest INTEGER NOT NULL DEFAULT 0,
+        lastseen INTEGER NOT NULL DEFAULT 0
     )""",
     """CREATE TABLE IF NOT EXISTS sessions(
         tokenkey TEXT PRIMARY KEY,
         userid INTEGER NOT NULL,
         expiresat INTEGER NOT NULL,
         createdat INTEGER NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS guest_tokens(
+        tokenkey TEXT PRIMARY KEY,
+        userid INTEGER NOT NULL,
+        expiresat INTEGER NOT NULL,
+        createdat INTEGER NOT NULL,
+        lastseen INTEGER NOT NULL,
+        claimedat INTEGER NOT NULL DEFAULT 0,
+        claimtarget INTEGER NOT NULL DEFAULT 0
     )""",
     """CREATE TABLE IF NOT EXISTS verify_codes(
         email TEXT NOT NULL,
@@ -123,6 +134,9 @@ TABLES = [
         PRIMARY KEY(userid, platform, srcid, dstid)
     )""",
     """CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expiresat)""",
+    """CREATE INDEX IF NOT EXISTS idx_sessions_userid ON sessions(userid)""",
+    """CREATE INDEX IF NOT EXISTS idx_guest_tokens_userid ON guest_tokens(userid)""",
+    """CREATE INDEX IF NOT EXISTS idx_guest_tokens_expire ON guest_tokens(expiresat)""",
     """CREATE INDEX IF NOT EXISTS idx_recommend_events_user_time ON recommend_events(userid, createdat DESC, id DESC)""",
     """CREATE INDEX IF NOT EXISTS idx_recommend_events_user_event ON recommend_events(userid, event, createdat DESC)""",
     """CREATE INDEX IF NOT EXISTS idx_recommend_edges_user_weight ON recommend_edges(userid, weight DESC, updatedat DESC)""",
@@ -141,13 +155,24 @@ PG_TABLES = [
         avatar TEXT NOT NULL DEFAULT '',
         bio TEXT NOT NULL DEFAULT '',
         email TEXT NOT NULL DEFAULT '',
-        emailverified INTEGER NOT NULL DEFAULT 0
+        emailverified INTEGER NOT NULL DEFAULT 0,
+        isguest INTEGER NOT NULL DEFAULT 0,
+        lastseen INTEGER NOT NULL DEFAULT 0
     )""",
     """CREATE TABLE IF NOT EXISTS sessions(
         tokenkey TEXT PRIMARY KEY,
         userid BIGINT NOT NULL,
         expiresat BIGINT NOT NULL,
         createdat BIGINT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS guest_tokens(
+        tokenkey TEXT PRIMARY KEY,
+        userid BIGINT NOT NULL,
+        expiresat BIGINT NOT NULL,
+        createdat BIGINT NOT NULL,
+        lastseen BIGINT NOT NULL,
+        claimedat BIGINT NOT NULL DEFAULT 0,
+        claimtarget BIGINT NOT NULL DEFAULT 0
     )""",
     """CREATE TABLE IF NOT EXISTS verify_codes(
         email TEXT NOT NULL,
@@ -244,6 +269,9 @@ PG_TABLES = [
     )""",
     """CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username_lower ON users(lower(username))""",
     """CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expiresat)""",
+    """CREATE INDEX IF NOT EXISTS idx_sessions_userid ON sessions(userid)""",
+    """CREATE INDEX IF NOT EXISTS idx_guest_tokens_userid ON guest_tokens(userid)""",
+    """CREATE INDEX IF NOT EXISTS idx_guest_tokens_expire ON guest_tokens(expiresat)""",
     """CREATE INDEX IF NOT EXISTS idx_oidc_codes_expire ON oidc_codes(expiresat)""",
     """CREATE INDEX IF NOT EXISTS idx_oidc_requests_expire ON oidc_requests(expiresat)""",
     """CREATE INDEX IF NOT EXISTS idx_oidc_sessions_user ON oidc_sessions(userid)""",
@@ -258,6 +286,7 @@ PG_TABLES = [
 USER_INDEXES = [
     """CREATE UNIQUE INDEX IF NOT EXISTS ux_users_uuid ON users(uuid) WHERE uuid <> ''""",
     """CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email ON users(email) WHERE email <> ''""",
+    """CREATE INDEX IF NOT EXISTS idx_users_guest_lastseen ON users(isguest, lastseen)""",
 ]
 
 USER_NEW_COLUMNS = [
@@ -267,6 +296,8 @@ USER_NEW_COLUMNS = [
     ("bio", "TEXT NOT NULL DEFAULT ''"),
     ("email", "TEXT NOT NULL DEFAULT ''"),
     ("emailverified", "INTEGER NOT NULL DEFAULT 0"),
+    ("isguest", "INTEGER NOT NULL DEFAULT 0"),
+    ("lastseen", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 RECOMMEND_EVENT_NEW_COLUMNS = [

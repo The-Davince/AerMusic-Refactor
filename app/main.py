@@ -76,6 +76,8 @@ async def lifespan(app: FastAPI):
         db.run(ddl)
     ensure_users()
     ensure_recommend_events()
+    from app.handlers.guest import cleanup_guests
+    await asyncio.to_thread(cleanup_guests)
     db.run("DELETE FROM sessions WHERE expiresat < ?", (int(time.time()),))
     if cfg.OIDC_ENABLED:
         from utils import jwt as jwtx, oidc_store

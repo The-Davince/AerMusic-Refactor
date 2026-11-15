@@ -167,6 +167,18 @@ body.settings-active #user-wrap {
     margin-top: 0.6vh;
 }
 
+.up-guest .up-guest-link {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 1.05vh;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+    padding-bottom: 0.15vh;
+}
+
+.up-guest .up-guest-link:hover {
+    color: #fff;
+}
+
 #user-popup .user-avatar {
     width: 6.4vh;
     height: 6.4vh;
@@ -347,6 +359,27 @@ body.settings-active #user-wrap {
     background: rgba(255, 255, 255, 0.14);
     color: #fff;
     font-weight: 600;
+}
+
+.auth-claim {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6vh;
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 1.15vh;
+    line-height: 1.5;
+    margin: 0 0 0.8vh;
+}
+
+.auth-claim input {
+    margin-top: 0.2vh;
+    accent-color: #fff;
+}
+
+.auth-claim small {
+    display: block;
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 1.02vh;
 }
 
 .auth-pane {

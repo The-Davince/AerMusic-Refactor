@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>游客数据说明 - AerMusic</title>
+    <style>
+        body { margin: 0; padding: 30px; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: transparent; overflow-x: hidden; line-height: 1.7; animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .container { max-width: 420px; margin: 0 auto; text-align: left; }
+        .brand-logo { font-size: 30px; font-weight: 800; letter-spacing: 3px; background: linear-gradient(135deg, #ffffff 0%, rgba(255, 255, 255, 0.6) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 6px 0; user-select: none; }
+        .sub-title { font-size: 12px; color: rgba(255, 255, 255, 0.45); margin: 0 0 24px 0; letter-spacing: 0.5px; }
+        .section { background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+        .section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.42); margin: 0 0 10px 0; font-weight: bold; }
+        .section p, .section li { font-size: 13px; color: rgba(255, 255, 255, 0.76); margin: 0 0 8px 0; word-break: break-word; }
+        .section ul { margin: 0; padding-left: 18px; }
+        .section li { margin-bottom: 6px; }
+        .section p:last-child, .section li:last-child { margin-bottom: 0; }
+        .back { display: inline-block; color: #70dcfd; font-size: 13px; text-decoration: none; margin-top: 6px; }
+        .back:hover { text-decoration: underline; }
+        .copyright-text { font-size: 11px; color: rgba(255, 255, 255, 0.35); margin: 22px 0 0 0; letter-spacing: 0.5px; }
+        *::-webkit-scrollbar { width: 6px; height: 6px; }
+        *::-webkit-scrollbar-track { background: rgba(255,255,255,0.08); border-radius: 3px; }
+        *::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 3px; }
+        *::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="brand-logo">AerMusic</h1>
+        <p class="sub-title">游客数据说明 · 更新于 2026-11-15</p>
+        <div class="section">
+            <h3>游客身份是什么</h3>
+            <p>未登录时，AerMusic 会为你创建一个本机游客身份。游客身份由随机生成的 Cookie 和 localStorage 令牌组成，不使用设备指纹，也不会读取通讯录、相册或剪贴板。</p>
+            <p>游客身份只用于区分本机的收藏、歌单、播放历史和推荐偏好，不跨设备使用。</p>
+        </div>
+        <div class="section">
+            <h3>会保存哪些数据</h3>
+            <ul>
+                <li>收藏的歌曲和歌单</li>
+                <li>播放历史、播放进度、跳过和收藏等推荐行为</li>
+                <li>不感兴趣、歌手/专辑/标签偏好等推荐信号</li>
+            </ul>
+            <p>这些数据只用于恢复你的本机数据和生成推荐，不用于广告投放或出售。</p>
+        </div>
+        <div class="section">
+            <h3>保存多久</h3>
+            <p>游客数据在连续 180 天不活跃后自动删除。清理会删除游客的收藏、歌单、历史、推荐事件和推荐边。</p>
+            <p>登录账号后，可以选择把当前游客数据合并到账号；合并后数据按账号的云同步规则保存。</p>
+        </div>
+        <div class="section">
+            <h3>怎么删除</h3>
+            <p>打开右上角用户菜单，在“游客模式”里点击“清除本机游客数据”，会同时删除本机游客的云端数据和本地令牌。</p>
+            <p>也可以在浏览器设置中清除本站 Cookie 和站点数据；这样本机将无法再访问原来的游客数据，游客数据会在保留期结束后自动清理。</p>
+        </div>
+        <div class="section">
+            <h3>跨设备与登录</h3>
+            <p>游客身份不跨设备。换设备或同时清空 Cookie 与 localStorage 后，需要登录账号才能继续使用原来的云端数据。</p>
+            <p>登录/注册时如果检测到本机游客数据，会询问是否合并；不会自动把游客数据并入账号。</p>
+        </div>
+        <div class="section">
+            <h3>联系与说明</h3>
+            <p>如对游客数据有疑问或需要协助删除，请联系 aermini@163.com。</p>
+            <p>本说明是游客数据处理的专项告知，不替代站点的其他服务条款。</p>
+        </div>
+        <a class="back" href="/">返回 AerMusic</a>
+        <p class="copyright-text">&copy; 2023-2026 The Davince.</p>
+    </div>
+</body>
+</html>

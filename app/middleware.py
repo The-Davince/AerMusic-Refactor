@@ -57,6 +57,6 @@ class CorsMiddleware(BaseHTTPMiddleware):
             resp.headers["Access-Control-Allow-Origin"] = origin
             resp.headers["Access-Control-Allow-Credentials"] = "true"
             resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Guest-Token"
             resp.headers["Vary"] = "Origin"
         return resp
